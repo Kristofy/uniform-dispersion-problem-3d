@@ -2,13 +2,9 @@ document.addEventListener("DOMContentLoaded", main, false);
 
 /**
  * Loads a WebAssembly module and returns its exports.
- *
- * @param {string} fileName - The path to the WebAssembly file.
- * @param {Object} [imports] - The imports to use when instantiating the
- * @returns {Promise<E>} A promise resolving to the module's exports.
  */
-async function wasmLoad(fileName, imports) {
-    return await new Promise((resolve, reject) => {
+async function wasmLoad<T extends object>(fileName: string, imports: WebAssembly.Imports): Promise<T> {
+    return await new Promise<T>((resolve, reject) => {
         const request = new XMLHttpRequest();
         request.open("GET", fileName);
         request.responseType = "arraybuffer";
@@ -17,8 +13,8 @@ async function wasmLoad(fileName, imports) {
         request.onload = () => {
             const wasmSource = request.response;
             const wasmModule = new WebAssembly.Module(wasmSource);
-            const wasmInstance = new WebAssembly.Instance(wasmModule, imports);
-            resolve(wasmInstance.exports);
+            const exports = new WebAssembly.Instance(wasmModule, imports).exports;
+            resolve(exports as T);
         }; // XMLHttpRequest.onload()
 
         request.onerror = () => {
@@ -30,17 +26,18 @@ async function wasmLoad(fileName, imports) {
 //===============================================================
 async function main() {
     const memory = new WebAssembly.Memory({ initial: 100, maximum: 1000 });
-    heap = new Uint8Array(memory.buffer);
     const imports = {
         env: {
-            console_log: (arg) => {
+            console_log: (arg: unknown) => {
                 console.log(arg);
             },
             memory: memory,
         },
     };
 
-    const wasm = await wasmLoad("main.wasm", imports);
+    const wasm = await wasmLoad<{
+        addone: (arg: number) => number;
+    }>("main.wasm", imports);
 
     console.log(wasm);
     console.log(wasm.addone(2));
