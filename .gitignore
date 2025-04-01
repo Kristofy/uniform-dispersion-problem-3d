@@ -1,5 +1,6 @@
 *.wasm
 node_modules/
+dist/
 
 
 # Prerequisites
