@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Grid Visualization</title>
+    
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #111;
+        color: #fff;
+        font-family: Arial, sans-serif;
+      }
+
+      canvas {
+        display: block;
+      }
+
+      #loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+        text-align: center;
+      }
+
+      button {
+        padding: 8px 12px;
+        background-color: #2a6496;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 5px;
+      }
+
+      button:hover {
+        background-color: #1e496d;
+      }
+    </style>
+
+    <!-- Import map to properly resolve module specifiers -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js",
+          "three/examples/jsm/controls/OrbitControls.js": "/node_modules/three/examples/jsm/controls/OrbitControls.js"
+        }
+      }
+    </script>
+
+    <script defer type="module" src="app.js"></script>
+  </head>
+  <body>
+    <div id="loading">Loading WebAssembly module...</div>
+  </body>
+</html>
+
