@@ -479,116 +479,61 @@ class Grid3DRenderer {
         animate();
     }
     
-    // Handle drag start in WASD mode
-    private handleDragStart() {
-        // Cast a ray from the mouse position to determine where we're starting the drag
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        
-        // First, check if the ray hits any cell in the scene
-        const intersects = this.raycaster.intersectObjects(this.cellMeshes);
-        
-        if (intersects.length > 0) {
-            // If we hit a cell, use that point as our drag start point
-            this.dragStartPoint.copy(intersects[0].point);
-        } else {
-            // If we don't hit any cells, use the ground plane as a fallback
-            const groundIntersect = new THREE.Vector3();
-            if (this.raycaster.ray.intersectPlane(this.groundPlane, groundIntersect)) {
-                this.dragStartPoint.copy(groundIntersect);
-            } else {
-                // If even the ground plane doesn't work, use a point at a fixed distance in front of the camera
-                this.camera.getWorldDirection(this.cameraDirection);
-                this.dragStartPoint.copy(this.camera.position).add(this.cameraDirection.multiplyScalar(10));
-            }
-        }
-        
-        // Store current mouse position
-        this.dragStartMouseX = this.mouse.x;
-        this.dragStartMouseY = this.mouse.y;
-        
-        // Reset previous deltas to avoid initial camera jump
-        this.prevDeltaX = 0;
-        this.prevDeltaY = 0;
-        
-        // Add a small delay before active dragging begins to prevent initial snap
-        setTimeout(() => {
-            // Update start position after a short delay to avoid snap
-            this.dragStartMouseX = this.mouse.x;
-            this.dragStartMouseY = this.mouse.y;
-        }, 16); // One frame at 60fps
-    }
-    
     // Handle drag move in WASD mode
     private handleDragMove() {
+        if (!this.isDragging) return;
+
         // Calculate the current mouse position's delta from the start position
         const deltaX = this.mouse.x - this.dragStartMouseX;
         const deltaY = this.mouse.y - this.dragStartMouseY;
         
-        // For the first few frames of dragging, apply stronger smoothing to prevent initial snap
-        const initialDragThreshold = 5; // Number of frames to consider as "initial drag"
-        const framesSinceDragStart = Math.min(initialDragThreshold, Math.abs(this.prevDeltaX * 100) + 1);
-        const adaptiveSmoothingFactor = 0.85 + (0.14 * (initialDragThreshold - framesSinceDragStart) / initialDragThreshold);
+        // Use smaller rotation factor for more precise control
+        const rotationFactor = this.dragSensitivity;
         
-        // Apply inertia using previous deltas (smoothing)
-        // This creates a weighted average that smooths out jerky movements
-        const smoothedDeltaX = deltaX * (1 - adaptiveSmoothingFactor) + this.prevDeltaX * adaptiveSmoothingFactor;
-        const smoothedDeltaY = deltaY * (1 - adaptiveSmoothingFactor) + this.prevDeltaY * adaptiveSmoothingFactor;
+        // Update camera rotation directly in first-person style
+        // Horizontal rotation (around Y axis)
+        this.camera.position.sub(this.controls.target);
+        this.camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX * rotationFactor);
+        this.camera.position.add(this.controls.target);
         
-        // Save for next frame
-        this.prevDeltaX = smoothedDeltaX;
-        this.prevDeltaY = smoothedDeltaY;
+        // Vertical rotation (around local X axis)
+        // Get right vector for proper up/down rotation
+        const right = new THREE.Vector3();
+        this.camera.getWorldDirection(this.cameraDirection);
+        right.crossVectors(this.camera.up, this.cameraDirection).normalize();
         
-        // Only process movement if there's enough change to avoid micro-jitters
-        if (Math.abs(smoothedDeltaX) > 0.0001 || Math.abs(smoothedDeltaY) > 0.0001) {
-            // Get the orbital distance from camera to drag point for scaling
-            const distance = this.camera.position.distanceTo(this.dragStartPoint);
-            
-            // Adaptive rotation factor - slower when far, faster when close
-            const rotationFactor = 0.5 / (1 + 0.1 * distance);
-            
-            // Create rotation quaternions with smoothed deltas
-            const verticalAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-            const horizontalAxis = new THREE.Vector3(0, 1, 0);
-            
-            const verticalRotation = new THREE.Quaternion().setFromAxisAngle(
-                verticalAxis,
-                -smoothedDeltaY * rotationFactor
-            );
-            
-            const horizontalRotation = new THREE.Quaternion().setFromAxisAngle(
-                horizontalAxis,
-                -smoothedDeltaX * rotationFactor
-            );
-            
-            // Combine the rotations (order matters)
-            const combinedRotation = new THREE.Quaternion()
-                .multiplyQuaternions(horizontalRotation, verticalRotation);
-            
-            // Get vector from pivot to camera
-            const offset = new THREE.Vector3().subVectors(
-                this.camera.position,
-                this.dragStartPoint
-            );
-            
-            // Apply the rotation
-            offset.applyQuaternion(combinedRotation);
-            
-            // Set the new camera position
-            this.camera.position.copy(this.dragStartPoint).add(offset);
-            
-            // Update the orbit controls target
-            this.controls.target.copy(this.dragStartPoint);
-            
-            // Update the dragStartMouseX/Y when movement is large enough
-            // This prevents large snapping motions when the mouse stops
-            const movementMagnitude = Math.sqrt(smoothedDeltaX * smoothedDeltaX + smoothedDeltaY * smoothedDeltaY);
-            if (movementMagnitude > 0.05) {
-                // Gradually update start position instead of jumping
-                const updateRatio = 0.1; // 10% update per frame when moving
-                this.dragStartMouseX += smoothedDeltaX * updateRatio;
-                this.dragStartMouseY += smoothedDeltaY * updateRatio;
-            }
+        // Apply vertical rotation with limits to prevent flipping
+        const verticalAngle = -deltaY * rotationFactor;
+        // Get current up-down angle
+        const currentAngle = this.cameraDirection.angleTo(new THREE.Vector3(0, 1, 0)) - Math.PI/2;
+        // Limit the angle to avoid camera flipping
+        if ((currentAngle + verticalAngle > -Math.PI/2.1) && 
+            (currentAngle + verticalAngle < Math.PI/2.1)) {
+            this.camera.position.sub(this.controls.target);
+            this.camera.position.applyAxisAngle(right, verticalAngle);
+            this.camera.position.add(this.controls.target);
         }
+        
+        // Make camera look at the target point
+        this.camera.lookAt(this.controls.target);
+        
+        // Update starting position for next frame to create continuous movement
+        this.dragStartMouseX = this.mouse.x;
+        this.dragStartMouseY = this.mouse.y;
+    }
+    
+    // Handle drag start in WASD mode
+    private handleDragStart() {
+        // Set drag start
+        this.dragStartMouseX = this.mouse.x;
+        this.dragStartMouseY = this.mouse.y;
+        
+        // In WASD mode, we want to rotate around the camera's current look-at point
+        this.camera.getWorldDirection(this.cameraDirection);
+        const lookAtDistance = 10; // Distance to look-at point
+        this.controls.target.copy(this.camera.position).add(
+            this.cameraDirection.multiplyScalar(lookAtDistance)
+        );
     }
 }
 
