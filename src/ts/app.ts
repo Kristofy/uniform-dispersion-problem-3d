@@ -63,6 +63,23 @@ class Grid3DRenderer {
         emissive: 0x555500
     });
     
+    // Movement controls
+    private moveSpeed = 0.2;
+    private wasdEnabled = false;
+    private keyStates: { [key: string]: boolean } = {};
+    private moveVector = new THREE.Vector3();
+    private cameraDirection = new THREE.Vector3();
+    
+    // Drag control in WASD mode
+    private isDragging = false;
+    private dragStartPoint = new THREE.Vector3();
+    private dragStartMouseX = 0;
+    private dragStartMouseY = 0;
+    private prevDeltaX = 0;
+    private prevDeltaY = 0;
+    private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0 plane for fallback
+    private dragSensitivity = 0.01; // Lower for smoother rotation
+    
     // Materials for different cell types
     private materials = {
         [CellType.EMPTY]: new THREE.MeshPhongMaterial({ 
@@ -139,6 +156,11 @@ class Grid3DRenderer {
             // Calculate mouse position in normalized device coordinates
             this.mouse.x = (event.clientX / container.clientWidth) * 2 - 1;
             this.mouse.y = - (event.clientY / container.clientHeight) * 2 + 1;
+            
+            // Handle dragging in WASD mode
+            if (this.wasdEnabled && this.isDragging) {
+                this.handleDragMove();
+            }
         });
         
         // Click to modify cells
@@ -154,6 +176,28 @@ class Grid3DRenderer {
                     this.renderGrid();
                 }
             }
+        });
+        
+        // Mouse down for dragging in WASD mode
+        container.addEventListener('mousedown', (event) => {
+            if (this.wasdEnabled) {
+                this.isDragging = true;
+                this.handleDragStart();
+            }
+        });
+        
+        // Mouse up to end drag
+        window.addEventListener('mouseup', () => {
+            this.isDragging = false;
+        });
+        
+        // Keyboard controls for movement
+        window.addEventListener('keydown', (event) => {
+            this.keyStates[event.key] = true;
+        });
+        
+        window.addEventListener('keyup', (event) => {
+            this.keyStates[event.key] = false;
         });
     }
     
@@ -183,6 +227,62 @@ class Grid3DRenderer {
                 meshMaterial.needsUpdate = true;
             }
         });
+    }
+    
+    // Toggle between WASD controls and orbital controls
+    public toggleWASDControls(enable: boolean) {
+        this.wasdEnabled = enable;
+        
+        // Always keep rotation enabled regardless of WASD state
+        this.controls.enableRotate = true;
+        
+        if (!enable) {
+            // Reset any key states when disabling WASD
+            this.keyStates = {};
+            
+            // Start animation to return to default position
+            this.animateCameraToDefaultPosition();
+        }
+    }
+    
+    // Animate camera back to default position
+    private animateCameraToDefaultPosition() {
+        const defaultPosition = new THREE.Vector3(15, 15, 15);
+        const defaultTarget = new THREE.Vector3(0, 0, 0);
+        
+        // Store starting position and target
+        const startPosition = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
+        
+        // Animation parameters
+        const duration = 1000; // milliseconds
+        const startTime = performance.now();
+        
+        // Animation function
+        const animate = (currentTime: number) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Ease function (cubic ease-out)
+            const ease = 1 - Math.pow(1 - progress, 3);
+            
+            // Interpolate camera position
+            this.camera.position.lerpVectors(startPosition, defaultPosition, ease);
+            
+            // Interpolate controls target
+            this.controls.target.lerpVectors(startTarget, defaultTarget, ease);
+            
+            // Update controls
+            this.controls.update();
+            
+            // Continue animation if not complete
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        // Start animation
+        requestAnimationFrame(animate);
     }
     
     // Add lights to the scene
@@ -241,7 +341,48 @@ class Grid3DRenderer {
             this.hoveredCell.material = this.highlightMaterial;
         }
         
+        // Handle keyboard movement when WASD mode is enabled
+        if (this.wasdEnabled) {
+            // Calculate movement based on key states
+            this.moveVector.set(0, 0, 0);
+            
+            // Forward/backward movement (along camera direction)
+            if (this.keyStates['w'] || this.keyStates['W']) {
+                this.camera.getWorldDirection(this.cameraDirection);
+                this.moveVector.add(this.cameraDirection.multiplyScalar(this.moveSpeed));
+            }
+            if (this.keyStates['s'] || this.keyStates['S']) {
+                this.camera.getWorldDirection(this.cameraDirection);
+                this.moveVector.add(this.cameraDirection.multiplyScalar(-this.moveSpeed));
+            }
+            
+            // Left/right movement (perpendicular to camera direction)
+            if (this.keyStates['a'] || this.keyStates['A']) {
+                this.camera.getWorldDirection(this.cameraDirection);
+                this.cameraDirection.cross(this.camera.up).normalize().multiplyScalar(-this.moveSpeed);
+                this.moveVector.add(this.cameraDirection);
+            }
+            if (this.keyStates['d'] || this.keyStates['D']) {
+                this.camera.getWorldDirection(this.cameraDirection);
+                this.cameraDirection.cross(this.camera.up).normalize().multiplyScalar(this.moveSpeed);
+                this.moveVector.add(this.cameraDirection);
+            }
+            
+            // Apply movement to camera position if there is movement
+            if (this.moveVector.length() > 0) {
+                // Move the camera
+                this.camera.position.add(this.moveVector);
+                
+                // Move the orbit controls target along with the camera to maintain relative position
+                // This keeps the camera pointing in the same direction during WASD movement
+                // while still allowing orbit controls to work
+                this.controls.target.add(this.moveVector);
+            }
+        }
+        
+        // Update controls last (they will update the camera based on mouse input)
         this.controls.update();
+        
         this.renderer.render(this.scene, this.camera);
     }
     
@@ -337,6 +478,118 @@ class Grid3DRenderer {
         // Start animation
         animate();
     }
+    
+    // Handle drag start in WASD mode
+    private handleDragStart() {
+        // Cast a ray from the mouse position to determine where we're starting the drag
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        
+        // First, check if the ray hits any cell in the scene
+        const intersects = this.raycaster.intersectObjects(this.cellMeshes);
+        
+        if (intersects.length > 0) {
+            // If we hit a cell, use that point as our drag start point
+            this.dragStartPoint.copy(intersects[0].point);
+        } else {
+            // If we don't hit any cells, use the ground plane as a fallback
+            const groundIntersect = new THREE.Vector3();
+            if (this.raycaster.ray.intersectPlane(this.groundPlane, groundIntersect)) {
+                this.dragStartPoint.copy(groundIntersect);
+            } else {
+                // If even the ground plane doesn't work, use a point at a fixed distance in front of the camera
+                this.camera.getWorldDirection(this.cameraDirection);
+                this.dragStartPoint.copy(this.camera.position).add(this.cameraDirection.multiplyScalar(10));
+            }
+        }
+        
+        // Store current mouse position
+        this.dragStartMouseX = this.mouse.x;
+        this.dragStartMouseY = this.mouse.y;
+        
+        // Reset previous deltas to avoid initial camera jump
+        this.prevDeltaX = 0;
+        this.prevDeltaY = 0;
+        
+        // Add a small delay before active dragging begins to prevent initial snap
+        setTimeout(() => {
+            // Update start position after a short delay to avoid snap
+            this.dragStartMouseX = this.mouse.x;
+            this.dragStartMouseY = this.mouse.y;
+        }, 16); // One frame at 60fps
+    }
+    
+    // Handle drag move in WASD mode
+    private handleDragMove() {
+        // Calculate the current mouse position's delta from the start position
+        const deltaX = this.mouse.x - this.dragStartMouseX;
+        const deltaY = this.mouse.y - this.dragStartMouseY;
+        
+        // For the first few frames of dragging, apply stronger smoothing to prevent initial snap
+        const initialDragThreshold = 5; // Number of frames to consider as "initial drag"
+        const framesSinceDragStart = Math.min(initialDragThreshold, Math.abs(this.prevDeltaX * 100) + 1);
+        const adaptiveSmoothingFactor = 0.85 + (0.14 * (initialDragThreshold - framesSinceDragStart) / initialDragThreshold);
+        
+        // Apply inertia using previous deltas (smoothing)
+        // This creates a weighted average that smooths out jerky movements
+        const smoothedDeltaX = deltaX * (1 - adaptiveSmoothingFactor) + this.prevDeltaX * adaptiveSmoothingFactor;
+        const smoothedDeltaY = deltaY * (1 - adaptiveSmoothingFactor) + this.prevDeltaY * adaptiveSmoothingFactor;
+        
+        // Save for next frame
+        this.prevDeltaX = smoothedDeltaX;
+        this.prevDeltaY = smoothedDeltaY;
+        
+        // Only process movement if there's enough change to avoid micro-jitters
+        if (Math.abs(smoothedDeltaX) > 0.0001 || Math.abs(smoothedDeltaY) > 0.0001) {
+            // Get the orbital distance from camera to drag point for scaling
+            const distance = this.camera.position.distanceTo(this.dragStartPoint);
+            
+            // Adaptive rotation factor - slower when far, faster when close
+            const rotationFactor = 0.5 / (1 + 0.1 * distance);
+            
+            // Create rotation quaternions with smoothed deltas
+            const verticalAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+            const horizontalAxis = new THREE.Vector3(0, 1, 0);
+            
+            const verticalRotation = new THREE.Quaternion().setFromAxisAngle(
+                verticalAxis,
+                -smoothedDeltaY * rotationFactor
+            );
+            
+            const horizontalRotation = new THREE.Quaternion().setFromAxisAngle(
+                horizontalAxis,
+                -smoothedDeltaX * rotationFactor
+            );
+            
+            // Combine the rotations (order matters)
+            const combinedRotation = new THREE.Quaternion()
+                .multiplyQuaternions(horizontalRotation, verticalRotation);
+            
+            // Get vector from pivot to camera
+            const offset = new THREE.Vector3().subVectors(
+                this.camera.position,
+                this.dragStartPoint
+            );
+            
+            // Apply the rotation
+            offset.applyQuaternion(combinedRotation);
+            
+            // Set the new camera position
+            this.camera.position.copy(this.dragStartPoint).add(offset);
+            
+            // Update the orbit controls target
+            this.controls.target.copy(this.dragStartPoint);
+            
+            // Update the dragStartMouseX/Y when movement is large enough
+            // This prevents large snapping motions when the mouse stops
+            const movementMagnitude = Math.sqrt(smoothedDeltaX * smoothedDeltaX + smoothedDeltaY * smoothedDeltaY);
+            if (movementMagnitude > 0.05) {
+                // Gradually update start position instead of jumping
+                const updateRatio = 0.1; // 10% update per frame when moving
+                this.dragStartMouseX += smoothedDeltaX * updateRatio;
+                this.dragStartMouseY += smoothedDeltaY * updateRatio;
+            }
+        }
+    }
 }
 
 // Implementation of memset for WebAssembly
@@ -431,7 +684,7 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     
     // Instructions
     const instructions = document.createElement('p');
-    instructions.textContent = 'Use mouse to rotate. Scroll to zoom. Click on cells to change them.';
+    instructions.textContent = 'Use mouse to rotate/zoom. Toggle WASD movement for first-person navigation. Click on cells to change them.';
     instructions.style.margin = '0 0 10px 0';
     instructions.style.fontSize = '14px';
     uiContainer.appendChild(instructions);
@@ -529,6 +782,27 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     transparencyContainer.appendChild(transparencyLabel);
     transparencyContainer.appendChild(transparencySlider);
     uiContainer.appendChild(transparencyContainer);
+    
+    // WASD movement toggle
+    const wasdContainer = document.createElement('div');
+    wasdContainer.style.marginBottom = '15px';
+    
+    const wasdCheckbox = document.createElement('input');
+    wasdCheckbox.type = 'checkbox';
+    wasdCheckbox.id = 'wasd-movement';
+    wasdCheckbox.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        renderer.toggleWASDControls(target.checked);
+    });
+    
+    const wasdLabel = document.createElement('label');
+    wasdLabel.setAttribute('for', 'wasd-movement');
+    wasdLabel.textContent = 'Enable WASD Movement';
+    wasdLabel.style.marginLeft = '5px';
+    
+    wasdContainer.appendChild(wasdCheckbox);
+    wasdContainer.appendChild(wasdLabel);
+    uiContainer.appendChild(wasdContainer);
     
     // Reset button
     const resetButton = document.createElement('button');
