@@ -15,6 +15,7 @@ enum CellType {
 // Interface for our WebAssembly exports
 interface WasmExports {
     addone: (arg: number) => number;
+    simulate_step: () => void;
     init_grid: (x: number, y: number, z: number) => void;
     get_cell: (x: number, y: number, z: number) => number;
     set_cell: (x: number, y: number, z: number, value: number) => number;
@@ -550,6 +551,19 @@ function memset(ptr: number, value: number, size: number): number {
     return ptr; // Return the original pointer as memset does in C
 }
 
+// Implementation of memcpy for WebAssembly
+function memcpy(dest: number, src: number, len: number): number {
+    const memory = (window as any).wasmMemory;
+    const buffer = new Uint8Array(memory.buffer);
+    
+    // Copy bytes from source to destination
+    for (let i = 0; i < len; i++) {
+        buffer[dest + i] = buffer[src + i];
+    }
+    
+    return dest; // Return the destination pointer as memcpy does in C
+}
+
 //===============================================================
 async function main() {
     // Hide loading message once everything is initialized
@@ -574,6 +588,7 @@ async function main() {
                 },
                 memory: memory,
                 memset: memset, // Provide the memset implementation
+                memcpy: memcpy, // Provide the memcpy implementation
             },
         };
 
@@ -749,17 +764,44 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     wasdContainer.appendChild(wasdLabel);
     uiContainer.appendChild(wasdContainer);
     
-    // Reset button
+    // Add controls for algorithm execution
+    const algoControlsContainer = document.createElement('div');
+    algoControlsContainer.style.marginBottom = '15px';
+
+    const startButton = document.createElement('button');
+    startButton.textContent = 'Start Algorithm';
+    startButton.style.marginRight = '10px';
+    startButton.onclick = () => {
+        // Call WebAssembly function to start the algorithm
+        const intervalId = setInterval(() => {
+            wasm.simulate_step();
+            renderer.renderGrid();
+        }, 100);
+
+        // Store interval ID to stop later if needed
+        (window as any).algoIntervalId = intervalId;
+    };
+    algoControlsContainer.appendChild(startButton);
+
+    const stopButton = document.createElement('button');
+    stopButton.textContent = 'Stop Algorithm';
+    stopButton.style.marginRight = '10px';
+    stopButton.onclick = () => {
+        // Stop the algorithm
+        clearInterval((window as any).algoIntervalId);
+    };
+    algoControlsContainer.appendChild(stopButton);
+
     const resetButton = document.createElement('button');
-    resetButton.textContent = 'Reset Demo Grid';
-    resetButton.style.width = '100%';
-    resetButton.style.padding = '8px';
-    resetButton.style.backgroundColor = '#2a6496';
+    resetButton.textContent = 'Reset Algorithm';
     resetButton.onclick = () => {
+        // Reset the grid and algorithm state
         wasm.create_demo_grid();
         renderer.renderGrid();
     };
-    uiContainer.appendChild(resetButton);
+    algoControlsContainer.appendChild(resetButton);
+
+    uiContainer.appendChild(algoControlsContainer);
     
     document.body.appendChild(uiContainer);
     
