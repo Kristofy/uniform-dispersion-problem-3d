@@ -47,6 +47,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       
+      - name: Add .nojekyll file
+        run: touch dist/.nojekyll
+
       - name: Install dependencies
         run: npm install
       
