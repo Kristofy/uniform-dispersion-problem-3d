@@ -2,6 +2,19 @@ CC = clang++
 CFLAGS = --target=wasm32 -nostdlib -O3
 LDFLAGS = --no-entry --export-all --lto-O3 --allow-undefined --import-memory
 
+# Native compilation for tests
+NATIVE_CC = $(CC)
+NATIVE_CFLAGS = -O2 -g -std=c++17
+TEST_WASM_DIR = src/wasm
+TEST_OUT_DIR = test_out
+TEST_BIN = $(TEST_OUT_DIR)/test_runner
+TEST_SRC = $(TEST_WASM_DIR)/test.cpp
+TEST_OBJ = $(TEST_OUT_DIR)/test.o
+
+# Define WASM_BUILD and NATIVE_BUILD flags
+WASM_DEFINE = -DNO_STD_LIB
+NATIVE_DEFINE = 
+
 TSC = npx tsc
 
 WASM_DIR=src/wasm
@@ -9,8 +22,11 @@ OUT_DIR=dist
 OBJ_DIR=$(OUT_DIR)/obj
 
 OUT_WASM = $(OUT_DIR)/main.wasm
-SRC_WASM = $(shell ls $(WASM_DIR) | grep .cpp)
+SRC_WASM = $(shell ls $(WASM_DIR) | grep .cpp | grep -v test.cpp)
 OBJ_WASM = $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC_WASM))
+
+# Header files that are used in the WASM code
+WASM_HEADERS = $(WASM_DIR)/maps.h
 
 OUT_JS = $(OUT_DIR)/app.js
 SRC_TS = $(shell find src/ts -name "*.ts")
@@ -34,6 +50,9 @@ $(OUT_DIR):
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
+$(TEST_OUT_DIR):
+	mkdir -p $(TEST_OUT_DIR)
+
 $(OUT_DIR)/node_modules/three:
 	mkdir -p $(OUT_DIR)/node_modules/three
 	cp -r $(THREE_DIR)/build $(OUT_DIR)/node_modules/three/
@@ -49,8 +68,13 @@ node_modules:
 $(OUT_WASM): $(OBJ_WASM) 
 	wasm-ld $(LDFLAGS) $(OBJ_WASM) -o $(OUT_WASM)
 
+# Add maps.h as a dependency for main.cpp object files
+$(OBJ_DIR)/main.o: $(WASM_DIR)/main.cpp $(WASM_HEADERS) $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(WASM_DEFINE) -o $@ -c $<
+
+# General rule for other cpp files
 $(OBJ_DIR)/%.o: $(WASM_DIR)/%.cpp $(OBJ_DIR)
-	$(CC) $(CFLAGS) -o $@ -c $<
+	$(CC) $(CFLAGS) $(WASM_DEFINE) -o $@ -c $<
 ########## WASM END ########## 
 
 
@@ -65,10 +89,18 @@ $(OUT_STATIC): $(OUT_DIR) $(SRC_STATIC)
 	cp -r $(SRC_STATIC_DIR)/* $(OUT_DIR)
 ########## STATIC END ########## 
 
+########## TESTS START ##########
+$(TEST_BIN): $(TEST_SRC) $(TEST_OUT_DIR)
+	$(NATIVE_CC) $(NATIVE_CFLAGS) $(NATIVE_DEFINE) -o $(TEST_BIN) $(TEST_SRC)
+
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+########## TESTS END ##########
+
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) $(TEST_OUT_DIR)
 
 run: all
 	python3 -m http.server --directory $(OUT_DIR)
 
-.PHONY: all clean run
+.PHONY: all clean run test
