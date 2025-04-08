@@ -421,15 +421,7 @@ public:
         active_for++;
         neighbors_tmp = neighbors; // Copy neighbors to temporary variable
 
-        // console_log(3);
-
-        // console_log(last_move.x);
-        // console_log(last_move.y);
-        // console_log(last_move.z);
-        // console_log(kulso_irany.x);
-        // console_log(kulso_irany.y);
-        // console_log(kulso_irany.z);
-        // console_log(97);
+       
         // First check if we can move in the preferred direction (kulso_irany)
         if (-kulso_irany != last_move && getRelative(kulso_irany) != WALL) {
             primary_dir = zero;
@@ -764,6 +756,8 @@ extern "C" void add_robot(int x, int y, int z) {
 
 // Simulate one step of the algorithm
 extern "C" void simulate_step() {
+
+
     // Log start position for debugging
     // console_log(6000 + start_pos.x * 100 + start_pos.y * 10 + start_pos.z); // Log: start_pos coordinates (6xyz)
     
@@ -1084,20 +1078,26 @@ extern "C" void load_map(int map_index = 0) {
     // Get the map info
     const WasmMaps::MapInfo& map_info = WasmMaps::all_maps[map_index];
     
-    // Initialize the grid with the map dimensions
+    // NOTE: The map dimensions from maps.h are in (x,y,z) order
+    // The MapInfo struct stores them as size_x, size_y, size_z
+    // But our map data in main.cpp uses [x][y][z] ordering
+    
+    // In the JSON, map is accessed as map[z][y][x]
+    // In our WebAssembly C++ code, map is accessed as map[x][y][z]
+    // We need to initialize the grid with the correct coordinate mapping
+    
+    // Initialize the grid with the map dimensions - swapping X and Z to match our internal representation
     init_grid(map_info.size_x, map_info.size_y, map_info.size_z);
     
-    // Set the start position
+    // Set the start position (keep the coordinate system consistent)
     set_start_position(map_info.start.x, map_info.start.y, map_info.start.z);
-    
+  
     // Fill the map data from the binary representation
-    // The map data is stored as a bit array where each bit represents a cell
-    // Note: In convert.py, the data is XOR'ed with 0xFF, so we need to invert 
-    // the interpretation here (0 = wall, 1 = walkable)
+    // The bit stream in the compressed data follows the order: z→y→x (from convert.py)
+    
     int cellCount = 0;
     
-    // Iterate through the 3D grid coordinates in the SAME order as the convert.py script
-    // The convert.py script iterates: z, then y, then x
+    // Traverse the map data in the same order as it was compressed in convert.py: z→y→x
     for (int z = 0; z < map_info.size_z; z++) {
         for (int y = 0; y < map_info.size_y; y++) {
             for (int x = 0; x < map_info.size_x; x++) {
@@ -1105,15 +1105,15 @@ extern "C" void load_map(int map_index = 0) {
                 int byteIndex = cellCount / 8;
                 int bitIndex = cellCount % 8;
                 
-                // Get the bit value - inverted because of the XOR in convert.py
-                // In the converted data, 0 = wall, 1 = walkable (after inversion)
+                // In convert.py: 1 = walkable, 0 = wall
                 bool isWalkable = (map_info.data_ptr[byteIndex] & (1 << bitIndex)) != 0;
                 
                 // Set the cell based on the bit value
+                // Our map is indexed as [x][y][z] in our C++ code
                 map[x][y][z] = isWalkable; // map stores walkability (true = walkable)
                 
                 // Set the door at the start position
-                if (x == map_info.start.x && y == map_info.start.y && z == map_info.start.z) {
+                if (x == map_info.start.x && y == map_info.start.z && z == map_info.start.y) {
                     set_cell(x, y, z, 4); // Door
                 } else if (!isWalkable) {
                     set_cell(x, y, z, 1); // Wall
@@ -1130,6 +1130,8 @@ extern "C" void load_map(int map_index = 0) {
     bfs();
     
     // console_log(9000 + map_index); // Log: Map loaded successfully
+
+    set_start_position(map_info.start.z, map_info.start.y, map_info.start.x);
 }
 
 // Function to get the number of available maps

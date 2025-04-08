@@ -205,7 +205,7 @@ class Grid3DRenderer {
         const detailsStr = details ? `: ${details}` : '';
         
 
-        console.log(`[${timestamp}] Robot #${robotId} ${eventType} ${posStr}${detailsStr}`);
+        // console.log(`[${timestamp}] Robot #${robotId} ${eventType} ${posStr}${detailsStr}`);
         
         // Future enhancement: send to UI log panel if needed
     }
@@ -236,15 +236,16 @@ class Grid3DRenderer {
         this.controls.dampingFactor = 0.1;
         
         // Initialize material opacities with defaults
-        this.materialOpacities[CellType.EMPTY] = 0.0; // Empty cells are invisible by default
-        this.materialOpacities[CellType.WALL] = 1.0;
-        this.materialOpacities[CellType.ROBOT] = 1.0;
-        this.materialOpacities[CellType.SETTLED_ROBOT] = 1.0;
-        this.materialOpacities[CellType.DOOR] = 1.0;
-        
-        // Update material properties based on opacities
-        this.materials[CellType.EMPTY].opacity = 0.0;
-        this.materials[CellType.EMPTY].transparent = true;
+        // this.materialOpacities[CellType.EMPTY] = 1.0; // Empty cells are fully visible (100% opacity) by default
+        // this.materialOpacities[CellType.WALL] = 0.0;
+        // this.materialOpacities[CellType.ROBOT] = 1.0;
+        // this.materialOpacities[CellType.SETTLED_ROBOT] = 1.0;
+        // this.materialOpacities[CellType.DOOR] = 1.0;
+        this.setMaterialOpacity(CellType.EMPTY, 1.0); // Empty cells are fully visible (100% opacity) by default
+        this.setMaterialOpacity(CellType.WALL, 0.0);
+        this.setMaterialOpacity(CellType.ROBOT, 1.0);
+        this.setMaterialOpacity(CellType.SETTLED_ROBOT, 1.0);
+        this.setMaterialOpacity(CellType.DOOR, 1.0);
         
         // Show empty cells by default since they'll be controlled by transparency
         this.showEmptyCells = true;
@@ -483,7 +484,7 @@ class Grid3DRenderer {
 
             if (cellData && typeof cellData.x === 'number') {
                 if (button === 0) { // Left click - Delete block
-                    console.log(`TS: Deleting block at (${cellData.x}, ${cellData.y}, ${cellData.z})`);
+                    // console.log(`TS: Deleting block at (${cellData.x}, ${cellData.y}, ${cellData.z})`);
                     this.wasmModule.set_cell(cellData.x, cellData.y, cellData.z, CellType.EMPTY);
                     this.renderGrid();
                 } else if (button === 2) { // Right click - Place block
@@ -501,7 +502,7 @@ class Grid3DRenderer {
 
                         // Check if the new position is within grid bounds
                         if (this.isWithinBounds(newX, newY, newZ)) {
-                            console.log(`TS: Placing block type ${this.selectedCellType} at (${newX}, ${newY}, ${newZ})`);
+                            // console.log(`TS: Placing block type ${this.selectedCellType} at (${newX}, ${newY}, ${newZ})`);
                             // Set the cell at the new location with the selected type
                             this.wasmModule.set_cell(newX, newY, newZ, this.selectedCellType);
                             this.renderGrid();
@@ -558,7 +559,7 @@ class Grid3DRenderer {
     
     // Get material opacity for a specific cell type
     public getMaterialOpacity(cellType: CellType): number {
-        return this.materialOpacities[cellType] || 1.0;
+        return this.materialOpacities[cellType] ?? 1.0;
     }
     
     // Get material for a specific cell type
@@ -849,11 +850,11 @@ class Grid3DRenderer {
     
     // Render the grid from WASM data
     public renderGrid() {
-        console.log("TS: renderGrid START");
+        // console.log("TS: renderGrid START");
         
         // Process robot states from the WASM module to get their movement information
         const robotStates = this.processRobotStates();
-        console.log(`TS: Processed ${robotStates.size} robot states`);
+        // console.log(`TS: Processed ${robotStates.size} robot states`);
         
         // Save current robot positions before clearing to animate transitions
         const previousRobotPositions = new Map<string, { mesh: THREE.Mesh, position: THREE.Vector3 }>();
@@ -1035,7 +1036,7 @@ class Grid3DRenderer {
         gridHelper.position.y = -this.cellSize / 2 - this.cellSpacing; // Position slightly below cells
         gridHelper.name = "gridHelper"; // Name it for easy removal
         this.scene.add(gridHelper);
-        console.log("TS: renderGrid END");
+        // console.log("TS: renderGrid END");
     }
     
     // Add a static cell mesh to the scene (walls, empty, door)
@@ -1112,7 +1113,7 @@ class Grid3DRenderer {
         mesh.position.copy(targetPos);
         
         // Log the snap movement for debugging
-        console.log(`TS: Snapped robot from (${startPos.x.toFixed(2)}, ${startPos.y.toFixed(2)}, ${startPos.z.toFixed(2)}) to (${targetPos.x.toFixed(2)}, ${targetPos.y.toFixed(2)}, ${targetPos.z.toFixed(2)})`);
+        // console.log(`TS: Snapped robot from (${startPos.x.toFixed(2)}, ${startPos.y.toFixed(2)}, ${startPos.z.toFixed(2)}) to (${targetPos.x.toFixed(2)}, ${targetPos.y.toFixed(2)}, ${targetPos.z.toFixed(2)})`);
         
         // We don't need to track animation state anymore since it's instant
         // But we'll keep the structure in place for future changes
@@ -1204,7 +1205,7 @@ class Grid3DRenderer {
                 const stateName = RobotDiff[robotState.diffState];
                 const directionName = Direction[robotState.direction];
                 if(stateName === "NoChange") continue;
-                console.log(`WASM Robot Event: Robot ${i} - State: ${stateName}, Direction: ${directionName}`);
+                // console.log(`WASM Robot Event: Robot ${i} - State: ${stateName}, Direction: ${directionName}`);
             }
         }
 
@@ -1349,6 +1350,21 @@ async function main() {
         // Create the 3D renderer, passing the crosshair element
         const gridRenderer = new Grid3DRenderer(wasm, container, crosshair);
         
+        // Try to load the first map (if available)
+        try {
+            const mapCount = wasm.get_map_count();
+            if (mapCount > 0) {
+                console.log(`Loading map 0 of ${mapCount} available maps`);
+                wasm.load_map(0);
+            }
+        } catch (err) {
+            console.warn("Could not load map:", err);
+        }
+        
+        // Set default transparencies
+        gridRenderer.setMaterialOpacity(CellType.WALL, 0);     // 0% (fully transparent)
+        gridRenderer.setMaterialOpacity(CellType.EMPTY, 1);    // 100% (fully visible)
+                
         // Render the grid
         gridRenderer.renderGrid();
         
@@ -1496,7 +1512,7 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
         
         const valueDisplay = document.createElement('span');
         // Get current opacity from renderer - set Empty to 0 regardless of renderer's current setting
-        let currentOpacity = cellType.type === CellType.EMPTY ? 0 : renderer.getMaterialOpacity(cellType.type);
+        let currentOpacity = renderer.getMaterialOpacity(cellType.type);
         valueDisplay.textContent = `${Math.round(currentOpacity * 100)}%`;
         valueDisplay.style.fontSize = '12px';
         valueDisplay.style.minWidth = '36px';
@@ -1514,11 +1530,6 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
         transparencySlider.style.width = '100%';
         transparencySlider.style.marginBottom = '0';
         transparencySlider.style.cursor = 'pointer';
-        
-        // For Empty cells, ensure we also set the material opacity to 0
-        if (cellType.type === CellType.EMPTY) {
-            renderer.setMaterialOpacity(CellType.EMPTY, 0);
-        }
         
         // Add event listener to update opacity
         transparencySlider.addEventListener('input', () => {
