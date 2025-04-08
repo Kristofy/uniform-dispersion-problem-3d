@@ -47,9 +47,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       
-      - name: Add .nojekyll file
-        run: touch dist/.nojekyll
-
       - name: Install dependencies
         run: npm install
       
@@ -64,6 +61,10 @@ jobs:
       
       - name: Build
         run: make all
+
+      - name: Add .nojekyll file
+        run: touch dist/.nojekyll
+
       
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
