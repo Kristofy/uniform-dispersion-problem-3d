@@ -186,6 +186,9 @@ class Grid3DRenderer {
             emissive: 0x663300 
         })
     };
+
+    // Store opacity values for each material type
+    private materialOpacities: { [key: number]: number } = {};
     
     // Geometry for cells
     private cellGeometry = new THREE.BoxGeometry(this.cellSize, this.cellSize, this.cellSize);
@@ -231,6 +234,20 @@ class Grid3DRenderer {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.1;
+        
+        // Initialize material opacities with defaults
+        this.materialOpacities[CellType.EMPTY] = 0.0; // Empty cells are invisible by default
+        this.materialOpacities[CellType.WALL] = 1.0;
+        this.materialOpacities[CellType.ROBOT] = 1.0;
+        this.materialOpacities[CellType.SETTLED_ROBOT] = 1.0;
+        this.materialOpacities[CellType.DOOR] = 1.0;
+        
+        // Update material properties based on opacities
+        this.materials[CellType.EMPTY].opacity = 0.0;
+        this.materials[CellType.EMPTY].transparent = true;
+        
+        // Show empty cells by default since they'll be controlled by transparency
+        this.showEmptyCells = true;
         
         // Create lights
         this.addLights();
@@ -513,17 +530,17 @@ class Grid3DRenderer {
         this.renderGrid();
     }
     
-    // Set transparency for wall cells
-    public setWallTransparency(opacity: number) {
-        const material = this.materials[CellType.WALL] as THREE.MeshPhongMaterial;
+    // Set transparency for any specific material type
+    public setMaterialOpacity(cellType: CellType, opacity: number): void {
+        const material = this.materials[cellType] as THREE.MeshPhongMaterial;
         material.opacity = opacity;
         material.transparent = opacity < 1.0;
         material.needsUpdate = true; // Ensure material update propagates
         
-        // Update all existing wall cells
+        // Update all existing cells of this type
         this.cellMeshes.forEach(mesh => {
-            if (mesh.userData.type === CellType.WALL) {
-                // Ensure we are updating the instance material, not the shared one
+            if (mesh.userData.type === cellType) {
+                // Ensure we're updating the instance material, not the shared one
                 const meshMaterial = mesh.material as THREE.MeshPhongMaterial;
                 if (meshMaterial && meshMaterial.uuid !== material.uuid) { // Check if it's a clone
                     meshMaterial.opacity = opacity;
@@ -534,6 +551,24 @@ class Grid3DRenderer {
                 }
             }
         });
+
+        // Store opacity settings to reapply when rendering
+        this.materialOpacities[cellType] = opacity;
+    }
+    
+    // Get material opacity for a specific cell type
+    public getMaterialOpacity(cellType: CellType): number {
+        return this.materialOpacities[cellType] || 1.0;
+    }
+    
+    // Get material for a specific cell type
+    public getMaterialForCellType(cellType: CellType): THREE.MeshPhongMaterial | null {
+        return this.materials[cellType] as THREE.MeshPhongMaterial || null;
+    }
+    
+    // Set transparency for wall cells
+    public setWallTransparency(opacity: number) {
+        this.setMaterialOpacity(CellType.WALL, opacity);
     }
     
     // Toggle between WASD controls and orbital controls
@@ -559,6 +594,21 @@ class Grid3DRenderer {
             // Start animation to return to default position
             this.animateCameraToDefaultPosition();
         }
+    }
+    
+    // Reset camera to default orbital position
+    public resetCameraView(): boolean {
+        // Disable WASD mode if it's active and return its previous state
+        const wasWasdEnabled = this.wasdEnabled;
+        if (this.wasdEnabled) {
+            this.toggleWASDControls(false);
+        }
+        
+        // Animate camera to default position
+        this.animateCameraToDefaultPosition();
+        
+        // Return whether WASD was disabled
+        return wasWasdEnabled;
     }
     
     // Animate camera back to default position
@@ -1024,13 +1074,17 @@ class Grid3DRenderer {
         // Select material based on cell type - CLONE it
         const material = (this.materials[cellType] as THREE.MeshPhongMaterial).clone();
         
-        // Ensure settled robots have distinct appearance from walls
+        // Apply the stored opacity setting for this cell type
+        const storedOpacity = this.materialOpacities[cellType];
+        if (storedOpacity !== undefined) {
+            material.opacity = storedOpacity;
+            material.transparent = storedOpacity < 1.0;
+        }
+        
+        // Ensure settled robots have distinct appearance from walls but respect transparency
         if (cellType === CellType.SETTLED_ROBOT) {
             material.color.set(0x0055ff);     // Blue color
             material.emissive.set(0x000066);  // Blue emissive
-            material.opacity = 1.0;           // Always fully opaque
-            material.transparent = false;     // Not affected by wall transparency
-            material.wireframe = false;       // Not wireframe
         }
         
         // Create mesh
@@ -1345,16 +1399,16 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     instructions.style.lineHeight = '1.4';
     uiContainer.appendChild(instructions);
     
-    // Cell type selection
+    // Cell type selection with integrated transparency
     const cellTypeContainer = document.createElement('div');
     cellTypeContainer.style.marginBottom = '15px';
     
     const cellTypeLabel = document.createElement('div');
-    cellTypeLabel.textContent = 'Select Block Type:';
+    cellTypeLabel.textContent = 'Block Types & Transparency:';
     cellTypeLabel.style.marginBottom = '5px';
     cellTypeContainer.appendChild(cellTypeLabel);
     
-    // Cell type buttons
+    // Cell type buttons with integrated transparency sliders
     const cellTypes = [
         { type: CellType.EMPTY, name: 'Empty', color: '#555555' }, // Darker for empty representation
         { type: CellType.WALL, name: 'Wall', color: '#808080' },
@@ -1363,93 +1417,139 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
         { type: CellType.DOOR, name: 'Door', color: '#ff8800' }
     ];
     
-    const buttonContainer = document.createElement('div');
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.flexWrap = 'wrap';
-    buttonContainer.style.gap = '5px';
-        
+    // Create a grid container for block types (2 columns)
+    const blockTypesGrid = document.createElement('div');
+    blockTypesGrid.style.display = 'grid';
+    blockTypesGrid.style.gridTemplateColumns = '1fr 1fr';
+    blockTypesGrid.style.gap = '8px';
+    blockTypesGrid.style.marginBottom = '10px';
+    
+    // Track the currently selected block type
+    let selectedCellTypeForPlacement: CellType | null = null;
+    
+    // Sliders container (separate section below the grid)
+    const slidersContainer = document.createElement('div');
+    slidersContainer.style.marginTop = '10px';
+    
+    // Create all transparency sliders with labels
+    const transparencySliders: {[key: number]: {slider: HTMLInputElement, value: HTMLSpanElement}} = {};
+    
     cellTypes.forEach(cellType => {
-        const button = document.createElement('button');
-        button.textContent = cellType.name;
-        button.style.backgroundColor = cellType.color;
-        button.style.color = ['Empty', 'Wall'].includes(cellType.name) ? 'black' : 'white';
-        button.style.border = '1px solid #444'; // Subtle border
-        button.style.padding = '5px 8px'; // Adjusted padding
-        button.style.flex = '1 0 calc(50% - 5px)';  // Two buttons per row, with gap
-        button.style.minWidth = '0';  // Allow button to shrink
-        button.style.cursor = 'pointer';
+        // Create block selection button for the grid
+        const blockButton = document.createElement('button');
+        blockButton.textContent = cellType.name;
+        blockButton.style.backgroundColor = cellType.color;
+        blockButton.style.color = ['Empty', 'Wall'].includes(cellType.name) ? 'black' : 'white';
+        blockButton.style.border = '1px solid #444';
+        blockButton.style.borderRadius = '3px';
+        blockButton.style.padding = '6px 8px';
+        blockButton.style.width = '100%';
+        blockButton.style.cursor = 'pointer';
+        blockButton.style.fontWeight = 'bold';
+        blockButton.style.fontSize = '14px';
         
-        button.addEventListener('click', () => {
+        // Add event listener for the button to select block type
+        blockButton.addEventListener('click', () => {
+            // Toggle selection state
+            if (blockButton.style.outline === '2px solid white') {
+                blockButton.style.outline = 'none';
+                selectedCellTypeForPlacement = null;
+                renderer.setSelectedCellType(CellType.WALL); // Default to wall when nothing selected
+                return;
+            }
+            
+            // Update selected type
+            selectedCellTypeForPlacement = cellType.type;
             renderer.setSelectedCellType(cellType.type);
-            // Highlight selected button
-            Array.from(buttonContainer.children).forEach(child => {
-                (child as HTMLElement).style.outline = 'none'; // Use outline for selection
+            
+            // Update button styles - deselect all others
+            document.querySelectorAll('[data-block-button]').forEach((elem: Element) => {
+                if (elem instanceof HTMLElement) {
+                    elem.style.outline = 'none';
+                }
             });
-            button.style.outline = '2px solid white';
+            
+            blockButton.style.outline = '2px solid white';
         });
         
-        buttonContainer.appendChild(button);
+        // Mark this as a block button for selection logic
+        blockButton.setAttribute('data-block-button', 'true');
+        blockButton.setAttribute('data-block-type', cellType.type.toString());
+        
+        // Add button to the grid
+        blockTypesGrid.appendChild(blockButton);
+        
+        // Create transparency control for this block type
+        const sliderContainer = document.createElement('div');
+        sliderContainer.style.marginBottom = '6px';
+        
+        // Create header with type name and value
+        const sliderHeader = document.createElement('div');
+        sliderHeader.style.display = 'flex';
+        sliderHeader.style.justifyContent = 'space-between';
+        sliderHeader.style.alignItems = 'center';
+        sliderHeader.style.marginBottom = '2px';
+        
+        const sliderLabel = document.createElement('span');
+        sliderLabel.textContent = `${cellType.name} opacity:`;
+        sliderLabel.style.fontSize = '12px';
+        
+        const valueDisplay = document.createElement('span');
+        // Get current opacity from renderer - set Empty to 0 regardless of renderer's current setting
+        let currentOpacity = cellType.type === CellType.EMPTY ? 0 : renderer.getMaterialOpacity(cellType.type);
+        valueDisplay.textContent = `${Math.round(currentOpacity * 100)}%`;
+        valueDisplay.style.fontSize = '12px';
+        valueDisplay.style.minWidth = '36px';
+        valueDisplay.style.textAlign = 'right';
+        
+        sliderHeader.appendChild(sliderLabel);
+        sliderHeader.appendChild(valueDisplay);
+        
+        // Create slider
+        const transparencySlider = document.createElement('input');
+        transparencySlider.type = 'range';
+        transparencySlider.min = '0';
+        transparencySlider.max = '100';
+        transparencySlider.value = (currentOpacity * 100).toString(); // Set initial value
+        transparencySlider.style.width = '100%';
+        transparencySlider.style.marginBottom = '0';
+        transparencySlider.style.cursor = 'pointer';
+        
+        // For Empty cells, ensure we also set the material opacity to 0
+        if (cellType.type === CellType.EMPTY) {
+            renderer.setMaterialOpacity(CellType.EMPTY, 0);
+        }
+        
+        // Add event listener to update opacity
+        transparencySlider.addEventListener('input', () => {
+            const opacity = parseInt(transparencySlider.value) / 100;
+            valueDisplay.textContent = `${transparencySlider.value}%`;
+            renderer.setMaterialOpacity(cellType.type, opacity);
+        });
+        
+        // Store slider reference for later updates
+        transparencySliders[cellType.type] = {
+            slider: transparencySlider,
+            value: valueDisplay
+        };
+        
+        sliderContainer.appendChild(sliderHeader);
+        sliderContainer.appendChild(transparencySlider);
+        slidersContainer.appendChild(sliderContainer);
     });
     
-    cellTypeContainer.appendChild(buttonContainer);
+    // Add the grid of buttons to the container
+    cellTypeContainer.appendChild(blockTypesGrid);
+    cellTypeContainer.appendChild(slidersContainer);
     uiContainer.appendChild(cellTypeContainer);
-    
-    // Toggle empty cells
-    const showEmptyCellsContainer = document.createElement('div');
-    showEmptyCellsContainer.style.marginBottom = '10px'; // Reduced margin
-    showEmptyCellsContainer.style.display = 'flex';
-    showEmptyCellsContainer.style.alignItems = 'center';
-    
-    const emptyCellsCheckbox = document.createElement('input');
-    emptyCellsCheckbox.type = 'checkbox';
-    emptyCellsCheckbox.id = 'show-empty';
-    emptyCellsCheckbox.style.marginRight = '8px';
-    emptyCellsCheckbox.addEventListener('change', (e) => {
-        const target = e.target as HTMLInputElement;
-        renderer.toggleEmptyCells(target.checked);
-    });
-    
-    const emptyCellsLabel = document.createElement('label');
-    emptyCellsLabel.setAttribute('for', 'show-empty');
-    emptyCellsLabel.textContent = 'Show Empty Cells';
-    emptyCellsLabel.style.cursor = 'pointer';
-    
-    showEmptyCellsContainer.appendChild(emptyCellsCheckbox);
-    showEmptyCellsContainer.appendChild(emptyCellsLabel);
-    uiContainer.appendChild(showEmptyCellsContainer);
-    
-    // Wall transparency slider
-    const transparencyContainer = document.createElement('div');
-    transparencyContainer.style.marginBottom = '10px'; // Reduced margin
-    
-    const transparencyLabel = document.createElement('label');
-    transparencyLabel.textContent = 'Wall Transparency:';
-    transparencyLabel.style.display = 'block';
-    transparencyLabel.style.marginBottom = '3px'; // Reduced margin
-    
-    const transparencySlider = document.createElement('input');
-    transparencySlider.type = 'range';
-    transparencySlider.min = '0';
-    transparencySlider.max = '100';
-    transparencySlider.value = '100';
-    transparencySlider.style.width = '100%';
-    transparencySlider.style.cursor = 'pointer';
-    
-    transparencySlider.addEventListener('input', (e) => {
-        const target = e.target as HTMLInputElement;
-        const opacity = parseInt(target.value) / 100;
-        renderer.setWallTransparency(opacity);
-    });
-    
-    transparencyContainer.appendChild(transparencyLabel);
-    transparencyContainer.appendChild(transparencySlider);
-    uiContainer.appendChild(transparencyContainer);
     
     // WASD movement toggle
     const wasdContainer = document.createElement('div');
     wasdContainer.style.marginBottom = '15px'; // Keep margin before algo controls
     wasdContainer.style.display = 'flex';
     wasdContainer.style.alignItems = 'center';
+    wasdContainer.style.borderTop = '1px solid #555';
+    wasdContainer.style.paddingTop = '10px';
     
     const wasdCheckbox = document.createElement('input');
     wasdCheckbox.type = 'checkbox';
@@ -1468,6 +1568,31 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     wasdContainer.appendChild(wasdCheckbox);
     wasdContainer.appendChild(wasdLabel);
     uiContainer.appendChild(wasdContainer);
+
+    const buttonStyle = `
+    padding: 6px 10px; 
+    margin-right: 5px; 
+    margin-bottom: 5px; 
+    cursor: pointer; 
+    border: 1px solid #444; 
+    background-color: #333; 
+    color: white;
+    `;
+
+    
+    // Add Reset View button
+    const resetViewButton = document.createElement('button');
+    resetViewButton.textContent = 'Reset Camera';
+    resetViewButton.style.cssText = buttonStyle + 'width: 100%;';
+    resetViewButton.onclick = () => {
+        const wasWasdEnabled = renderer.resetCameraView();
+        
+        // Update the WASD checkbox if it was enabled
+        if (wasWasdEnabled) {
+            wasdCheckbox.checked = false;
+        }
+    };
+    uiContainer.appendChild(resetViewButton);
     
     // Add controls for algorithm execution
     const algoControlsContainer = document.createElement('div');
@@ -1480,16 +1605,7 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     algoTitle.style.marginBottom = '8px';
     algoControlsContainer.appendChild(algoTitle);
 
-    const buttonStyle = `
-        padding: 6px 10px; 
-        margin-right: 5px; 
-        margin-bottom: 5px; 
-        cursor: pointer; 
-        border: 1px solid #444; 
-        background-color: #333; 
-        color: white;
-    `;
-
+   
     const startButton = document.createElement('button');
     startButton.textContent = 'Start';
     startButton.style.cssText = buttonStyle;
@@ -1555,43 +1671,67 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     sliderContainer.style.alignItems = 'center';
     sliderContainer.style.gap = '10px';
     
-    // Create slider for simulation speed
+    // Create slider for simulation speed with exponential scale
     const speedSlider = document.createElement('input');
     speedSlider.type = 'range';
-    speedSlider.min = '1';
-    speedSlider.max = '20';
-    speedSlider.value = '5'; // Default speed (200ms interval)
+    speedSlider.min = '0';
+    speedSlider.max = '100';
+    speedSlider.value = '50'; // Default middle value
     speedSlider.style.flex = '1';
     speedSlider.style.cursor = 'pointer';
     
     // Create label to display the current speed value
     const speedValueLabel = document.createElement('span');
-    speedValueLabel.textContent = '5x';
-    speedValueLabel.style.minWidth = '30px';
+    speedValueLabel.textContent = '1.0x'; // Default display
+    speedValueLabel.style.minWidth = '40px';
     speedValueLabel.style.textAlign = 'right';
     
-    // Store the current simulation speed in the window object for access by start button
-    (window as any).simulationSpeed = parseInt(speedSlider.value);
+    // Calculate speed multiplier using exponential function
+    // This gives much better control over the low end while still allowing high speeds
+    function calculateSpeedMultiplier(sliderValue: number): number {
+        // Convert slider value (0-100) to exponential scale
+        // This function will give speed values from 0.1x to ~50x
+        const exponent = sliderValue / 100 * 3 - 1; // Maps 0-100 to -1 to 2
+        const multiplier = Math.pow(10, exponent); // 10^exponent gives 0.1 to 100
+        
+        // Round to one decimal place for display and calculations
+        return Math.round(multiplier * 10) / 10;
+    }
     
-    // Add event listener to update the displayed value and stored speed
-    speedSlider.addEventListener('input', (e) => {
-        const target = e.target as HTMLInputElement;
-        const value = parseInt(target.value);
-        speedValueLabel.textContent = `${value}x`;
-        (window as any).simulationSpeed = value;
+    // Function to update the simulation speed based on slider value
+    function updateSimulationSpeed() {
+        const sliderValue = parseInt(speedSlider.value);
+        const speedMultiplier = calculateSpeedMultiplier(sliderValue);
+        
+        // Update display
+        speedValueLabel.textContent = `${speedMultiplier.toFixed(1)}x`;
+        
+        // Store the speed value for the simulation
+        (window as any).simulationSpeed = speedMultiplier;
         
         // If simulation is currently running, restart it with the new speed
         if ((window as any).algoIntervalId) {
             clearInterval((window as any).algoIntervalId);
             
+            // Calculate interval in ms (1000ms / speed multiplier)
+            const intervalMs = Math.max(10, Math.round(1000 / speedMultiplier));
+            
             // Restart with new interval
             const intervalId = setInterval(() => {
                 wasm.simulate_step();
                 renderer.renderGrid();
-            }, 1000 / value); // Convert speed factor to milliseconds (higher = faster)
+            }, intervalMs);
             
             (window as any).algoIntervalId = intervalId;
         }
+    }
+    
+    // Initialize with default speed
+    updateSimulationSpeed();
+    
+    // Add event listener to update the displayed value and stored speed
+    speedSlider.addEventListener('input', () => {
+        updateSimulationSpeed();
     });
     
     sliderContainer.appendChild(speedSlider);
@@ -1657,9 +1797,8 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     document.body.appendChild(uiContainer);
     
     // Set default selected cell type and trigger its style
-    const defaultButton = buttonContainer.children[1] as HTMLElement; // Select Wall by default
+    const defaultButton = document.querySelector('[data-block-button]') as HTMLElement; // Select first button
     if (defaultButton) {
-        defaultButton.click(); 
-        defaultButton.style.outline = '2px solid white'; // Ensure initial selection is highlighted
+        defaultButton.click(); // This will trigger the click event handler
     }
 }

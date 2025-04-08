@@ -1,8 +1,8 @@
 #include "maps.h"
 
 constexpr int MAX_SIZE = 20;
-constexpr int MAX_ROBOTS = 100;
-constexpr int MAX_QUEUE_SIZE = 1000;
+constexpr int MAX_ROBOTS = MAX_SIZE * MAX_SIZE * MAX_SIZE;
+constexpr int MAX_QUEUE_SIZE = MAX_ROBOTS;
 constexpr int INT_MAX = 2147483647;
 
 #if defined(__EMSCRIPTEN__) || defined(NO_STD_LIB)
@@ -1058,8 +1058,8 @@ extern "C" int pop_robot_state(int robot_index) {
     return box_type(robots[robot_index], robot_index, answer);
 }
 
-// Load a predefined map from maps.h by index
-extern "C" void load_map(int map_index) {
+// Load a predefined map from maps.h by index (loads first map by default)
+extern "C" void load_map(int map_index = 0) {
     // Make sure our vectors are initialized
     up = Vector3Int(0, 1, 0);
     down = Vector3Int(0, -1, 0);
@@ -1072,7 +1072,13 @@ extern "C" void load_map(int map_index) {
     // Validate map index
     if (map_index < 0 || map_index >= WasmMaps::ALL_MAPS_COUNT) {
         // console_log(8000 + map_index); // Log: Invalid map index
-        return;
+        
+        // If an invalid index is provided but we have maps, load the first one
+        if (WasmMaps::ALL_MAPS_COUNT > 0) {
+            map_index = 0; // Default to the first map
+        } else {
+            return; // No maps available
+        }
     }
 
     // Get the map info
@@ -1085,26 +1091,43 @@ extern "C" void load_map(int map_index) {
     set_start_position(map_info.start.x, map_info.start.y, map_info.start.z);
     
     // Fill the map data from the binary representation
-    // The map data is stored as a flat bool array
-    int idx = 0;
-    for (int x = 0; x < map_info.size_x; x++) {
+    // The map data is stored as a bit array where each bit represents a cell
+    // Note: In convert.py, the data is XOR'ed with 0xFF, so we need to invert 
+    // the interpretation here (0 = wall, 1 = walkable)
+    int cellCount = 0;
+    
+    // Iterate through the 3D grid coordinates in the SAME order as the convert.py script
+    // The convert.py script iterates: z, then y, then x
+    for (int z = 0; z < map_info.size_z; z++) {
         for (int y = 0; y < map_info.size_y; y++) {
-            for (int z = 0; z < map_info.size_z; z++) {
-                // If the bit is 1, it's a wall, otherwise it's empty
-                bool is_walkable = !map_info.data_ptr[idx++];
-                map[x][y][z] = is_walkable;
+            for (int x = 0; x < map_info.size_x; x++) {
+                // Calculate bit position in the data array
+                int byteIndex = cellCount / 8;
+                int bitIndex = cellCount % 8;
+                
+                // Get the bit value - inverted because of the XOR in convert.py
+                // In the converted data, 0 = wall, 1 = walkable (after inversion)
+                bool isWalkable = (map_info.data_ptr[byteIndex] & (1 << bitIndex)) != 0;
+                
+                // Set the cell based on the bit value
+                map[x][y][z] = isWalkable; // map stores walkability (true = walkable)
                 
                 // Set the door at the start position
                 if (x == map_info.start.x && y == map_info.start.y && z == map_info.start.z) {
                     set_cell(x, y, z, 4); // Door
-                } else if (!is_walkable) {
+                } else if (!isWalkable) {
                     set_cell(x, y, z, 1); // Wall
                 } else {
                     set_cell(x, y, z, 0); // Empty
                 }
+                
+                cellCount++;
             }
         }
     }
+    
+    // Calculate the shortest distances from the start position
+    bfs();
     
     // console_log(9000 + map_index); // Log: Map loaded successfully
 }
