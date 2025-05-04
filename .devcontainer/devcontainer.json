@@ -1,0 +1,9 @@
+{
+    "name": "Uniform dispersion problem 3D",
+	"dockerComposeFile": [
+		"../docker-compose.yml"
+	],
+    "service": "uniform-dispersion",
+    "workspaceFolder": "/workspace",
+	"remoteUser": "ubuntu"
+}
