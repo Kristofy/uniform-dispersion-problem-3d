@@ -765,6 +765,16 @@ extern "C" void add_robot(int x, int y, int z) {
     robot_count++;
 }
 
+// Add global variable for active probability
+static int g_active_probability = 50;
+
+// Expose setter to JS
+extern "C" void set_active_probability(int p) {
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+    g_active_probability = p;
+}
+
 // Simulate one step of the algorithm
 extern "C" void simulate_step() {
 
@@ -800,7 +810,6 @@ extern "C" void simulate_step() {
     for (int i = 0; i < robot_count; i++) {
         Robot& robot = robots[i];
 
-
         if (robot.active) {
             // Generate primary neighbor data for the robot's current position
             array<CellState, 3*3*3> neighbours;
@@ -810,7 +819,7 @@ extern "C" void simulate_step() {
             array<CellState, 3*3*3> neighbours2;
             generateNeighbors(robot.position.x, robot.position.y, robot.position.z, neighbours2);
 
-            if(randomInt(0,100) < 50) {
+            if(randomInt(0,100) < g_active_probability) {
                 // Call lookCompute with the distance from start position
                 robot.sleeping = false;
                 robot.lookCompute(neighbours, neighbours2, distances[robot.position.x][robot.position.y][robot.position.z]);
@@ -927,6 +936,7 @@ extern "C" int get_cell(int x, int y, int z) {
     if (robot_field[x][y][z] != nullptr) {
         if (robot_field[x][y][z]->active) {
             if(robot_field[x][y][z]->sleeping) {
+                return 5; // Sleeping
             } else {
                 return 2; // Active robot
             }
@@ -964,7 +974,8 @@ enum class RobotDiff {
     Moving = 1,
     Stopped = 2,
     Settled = 3,
-    Invalid = 4
+    Sleeping = 4,
+    Invalid = 5,
 };
 
 int box_type(Robot& robot, int robot_index, RobotDiff diff) {
@@ -1054,6 +1065,36 @@ extern "C" int pop_robot_state(int robot_index) {
     // SETTLED -> SETTLED = No change
     if (prev_state == RobotState::SETTLED && curr_state == RobotState::SETTLED) {
         answer = RobotDiff::NoChange;
+    }
+
+    // IDLE -> SLEEPING = Sleeping
+    if (prev_state == RobotState::IDLE && curr_state == RobotState::IDLE) {
+        answer = RobotDiff::Sleeping;
+    }
+
+    // SLEEPING -> IDLE = No change
+    if (prev_state == RobotState::IDLE && curr_state == RobotState::IDLE) {
+        answer = RobotDiff::NoChange;
+    }
+
+    // SLEEPING -> ACTIVE = Moving
+    if (prev_state == RobotState::IDLE && curr_state == RobotState::ACTIVE) {
+        answer = RobotDiff::Moving;
+    }
+
+    // SLEEPING -> SETTLED = Settled
+    if (prev_state == RobotState::IDLE && curr_state == RobotState::SETTLED) {
+        answer = RobotDiff::Settled;
+    }
+
+    // SLEEPING -> SLEEPING = No change
+    if (prev_state == RobotState::IDLE && curr_state == RobotState::IDLE) {
+        answer = RobotDiff::Sleeping;
+    }
+
+    // Active -> Sleeping = Sleeping
+    if (prev_state == RobotState::ACTIVE && curr_state == RobotState::IDLE) {
+        answer = RobotDiff::Sleeping;
     }
 
     // Update the previous state to the current state

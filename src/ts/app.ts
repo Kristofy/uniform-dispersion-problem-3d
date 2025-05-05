@@ -19,7 +19,8 @@ enum RobotDiff {
     Moving = 1,
     Stopped = 2,
     Settled = 3,
-    Invalid = 4
+    Sleeping = 4,
+    Invalid = 5,
 }
 
 // Direction enum matching the six cardinal directions in the C++ code
@@ -84,6 +85,7 @@ interface WasmExports {
     get_map_size_x: (map_index: number) => number;         // Get map width
     get_map_size_y: (map_index: number) => number;         // Get map height
     get_map_size_z: (map_index: number) => number;         // Get map depth
+    set_active_probability: (p: number) => void; // Set the active probability for robots
 }
 
 
@@ -186,9 +188,10 @@ class Grid3DRenderer {
             color: 0xff8800, 
             emissive: 0x663300 
         }),
-        [CellType.SLEEPING_ROBOT]: new THREE.MeshPhongMaterial({ 
-            color: 0x006600, 
-            emissive: 0x003300 
+        [CellType.SLEEPING_ROBOT]: new THREE.MeshPhongMaterial({
+            // A color that signifies a sleeping robot, that is not a flat color
+            color: 0x8888ff,
+            emissive: 0x4444ff,
         })
     };
 
@@ -707,7 +710,6 @@ class Grid3DRenderer {
         // Calculate objects intersecting the picking ray
         const intersects = this.raycaster.intersectObjects(this.cellMeshes);
         
-        // --- Optimized Highlighting Logic --- 
         let currentIntersectedMesh: THREE.Mesh | null = null;
         if (intersects.length > 0) {
             const intersectedMeshCandidate = intersects[0].object as THREE.Mesh;
@@ -736,7 +738,6 @@ class Grid3DRenderer {
                 this.hoveredCellOriginalMaterial = null;
             }
         }
-        // --- End Optimized Highlighting Logic ---
         
         // Handle keyboard movement when WASD mode is enabled
         if (this.wasdEnabled) {
@@ -980,6 +981,15 @@ class Grid3DRenderer {
                                     this.logRobotEvent("STOPPED", robotIndex, {x, y, z});
                                     break;
                                 }
+
+                                case RobotDiff.Sleeping: {
+                                    mesh.position.copy(worldPosition);
+                                    const material = mesh.material as THREE.MeshPhongMaterial;
+                                    material.color.set(0xff0000);     // Washed out orange color for sleeping robot
+                                    material.emissive.set(0x663300);  // Orange-brown emissive
+
+                                    break;
+                                }
                                 
                                 case RobotDiff.NoChange:
                                 default:
@@ -1079,6 +1089,7 @@ class Grid3DRenderer {
     // Add a robot cell mesh to the scene (which will be animated)
     private addRobotCellToScene(x: number, y: number, z: number, cellType: CellType, position: THREE.Vector3) {
         // Select material based on cell type - CLONE it
+        console.log(`Addding ${cellType} at (${x}, ${y}, ${z})`);
         const material = (this.materials[cellType] as THREE.MeshPhongMaterial).clone();
         
         // Apply the stored opacity setting for this cell type
@@ -1094,8 +1105,9 @@ class Grid3DRenderer {
             material.emissive.set(0x000066);  // Blue emissive
         }
         if (cellType === CellType.SLEEPING_ROBOT) {
-            material.color.set(0x006600);     // Blue color
-            material.emissive.set(0x003300);  // Blue emissive
+            const mat = this.materials[CellType.SLEEPING_ROBOT] as THREE.MeshPhongMaterial;
+            material.color.set(mat.color);
+            material.emissive.set(mat.emissive);
         }
         
         // Create mesh
@@ -1683,9 +1695,8 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     // Simulation speed control
     const speedControlContainer = document.createElement('div');
     speedControlContainer.style.marginBottom = '15px';
-    speedControlContainer.style.borderTop = '1px solid #555'; // Separator
-    speedControlContainer.style.paddingTop = '10px'; // Space above elements
-    
+    speedControlContainer.style.borderTop = '1px solid #555';
+    speedControlContainer.style.paddingTop = '10px';    
     const speedLabel = document.createElement('div');
     speedLabel.textContent = 'Simulation Speed:';
     speedLabel.style.marginBottom = '8px';
@@ -1702,14 +1713,12 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     speedSlider.type = 'range';
     speedSlider.min = '0';
     speedSlider.max = '100';
-    speedSlider.value = '50'; // Default middle value
-    speedSlider.style.flex = '1';
+    speedSlider.value = '50';    speedSlider.style.flex = '1';
     speedSlider.style.cursor = 'pointer';
     
     // Create label to display the current speed value
     const speedValueLabel = document.createElement('span');
-    speedValueLabel.textContent = '1.0x'; // Default display
-    speedValueLabel.style.minWidth = '40px';
+    speedValueLabel.textContent = '1.0x';    speedValueLabel.style.minWidth = '40px';
     speedValueLabel.style.textAlign = 'right';
     
     // Calculate speed multiplier using exponential function
@@ -1765,7 +1774,50 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
     speedControlContainer.appendChild(sliderContainer);
     
     uiContainer.appendChild(speedControlContainer);
-    
+
+    // --- Robot Active Probability Slider ---
+    const activeProbContainer = document.createElement('div');
+    activeProbContainer.style.marginBottom = '15px';
+    activeProbContainer.style.borderTop = '1px solid #555';
+    activeProbContainer.style.paddingTop = '10px';
+
+    const activeProbLabel = document.createElement('div');
+    activeProbLabel.textContent = 'Robot Active Probability:';
+    activeProbLabel.style.marginBottom = '8px';
+    activeProbContainer.appendChild(activeProbLabel);
+
+    const probSliderContainer = document.createElement('div');
+    probSliderContainer.style.display = 'flex';
+    probSliderContainer.style.alignItems = 'center';
+    probSliderContainer.style.gap = '10px';
+
+    const probSlider = document.createElement('input');
+    probSlider.type = 'range';
+    probSlider.min = '0';
+    probSlider.max = '100';
+    probSlider.value = '50';
+    probSlider.style.flex = '1';
+    probSlider.style.cursor = 'pointer';
+
+    const probValueLabel = document.createElement('span');
+    probValueLabel.textContent = '50%';
+    probValueLabel.style.minWidth = '40px';
+    probValueLabel.style.textAlign = 'right';
+
+    probSlider.addEventListener('input', () => {
+        const p = parseInt(probSlider.value, 10);
+        probValueLabel.textContent = `${p}%`;
+        if (typeof wasm.set_active_probability === 'function') {
+            wasm.set_active_probability(p);
+        }
+    });
+
+    probSliderContainer.appendChild(probSlider);
+    probSliderContainer.appendChild(probValueLabel);
+    activeProbContainer.appendChild(probSliderContainer);
+    uiContainer.appendChild(activeProbContainer);
+    // --- End Robot Active Probability Slider ---
+
     // Map selection container
     const mapSelectionContainer = document.createElement('div');
     mapSelectionContainer.style.marginBottom = '15px';
