@@ -9,7 +9,8 @@ enum CellType {
     WALL = 1,
     ROBOT = 2,
     SETTLED_ROBOT = 3,
-    DOOR = 4
+    DOOR = 4,
+    SLEEPING_ROBOT = 5
 }
 
 // Robot differential states matching the C++ enum
@@ -184,6 +185,10 @@ class Grid3DRenderer {
         [CellType.DOOR]: new THREE.MeshPhongMaterial({ 
             color: 0xff8800, 
             emissive: 0x663300 
+        }),
+        [CellType.SLEEPING_ROBOT]: new THREE.MeshPhongMaterial({ 
+            color: 0x006600, 
+            emissive: 0x003300 
         })
     };
 
@@ -246,6 +251,7 @@ class Grid3DRenderer {
         this.setMaterialOpacity(CellType.ROBOT, 1.0);
         this.setMaterialOpacity(CellType.SETTLED_ROBOT, 1.0);
         this.setMaterialOpacity(CellType.DOOR, 1.0);
+        this.setMaterialOpacity(CellType.SLEEPING_ROBOT, 1.0);
         
         // Show empty cells by default since they'll be controlled by transparency
         this.showEmptyCells = true;
@@ -863,7 +869,7 @@ class Grid3DRenderer {
         this.robotMeshMap.clear();
         
         this.cellMeshes.forEach(mesh => {
-            if (mesh.userData.type === CellType.ROBOT || mesh.userData.type === CellType.SETTLED_ROBOT) {
+            if (mesh.userData.type === CellType.ROBOT || mesh.userData.type === CellType.SETTLED_ROBOT || mesh.userData.type === CellType.SLEEPING_ROBOT) {
                 const key = this.getGridPositionKey(mesh.userData.x, mesh.userData.y, mesh.userData.z);
                 // Store the mesh itself and its current world position
                 previousRobotPositions.set(key, { mesh: mesh, position: mesh.position.clone() });
@@ -905,7 +911,7 @@ class Grid3DRenderer {
                 for (let z = 0; z < sizeZ; z++) {
                     const cellType = this.wasmModule.get_cell(x, y, z);
                     
-                    if (cellType === CellType.ROBOT || cellType === CellType.SETTLED_ROBOT) {
+                    if (cellType === CellType.ROBOT || cellType === CellType.SETTLED_ROBOT || cellType === CellType.SLEEPING_ROBOT) {
                         const currentKey = this.getGridPositionKey(x, y, z);
                         const worldPosition = this.gridPositionToWorldPosition.get(currentKey)!;
                         currentRobots.add(currentKey); // Mark this position as having a robot now
@@ -1086,6 +1092,10 @@ class Grid3DRenderer {
         if (cellType === CellType.SETTLED_ROBOT) {
             material.color.set(0x0055ff);     // Blue color
             material.emissive.set(0x000066);  // Blue emissive
+        }
+        if (cellType === CellType.SLEEPING_ROBOT) {
+            material.color.set(0x006600);     // Blue color
+            material.emissive.set(0x003300);  // Blue emissive
         }
         
         // Create mesh
@@ -1337,6 +1347,10 @@ async function main() {
                 memory: memory,
                 memset: memset, // Provide the memset implementation
                 memcpy: memcpy, // Provide the memcpy implementation
+                randomInt: (min: number, max: number) => {
+                    // Generate a random number between min and max (inclusive)
+                    return Math.floor(Math.random() * (max - min + 1)) + min;
+                }
             },
         };
 
@@ -1430,7 +1444,8 @@ function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
         { type: CellType.WALL, name: 'Wall', color: '#808080' },
         { type: CellType.ROBOT, name: 'Robot', color: '#00cc00' }, // Brighter green
         { type: CellType.SETTLED_ROBOT, name: 'Settled', color: '#0055ff' }, // Brighter blue
-        { type: CellType.DOOR, name: 'Door', color: '#ff8800' }
+        { type: CellType.DOOR, name: 'Door', color: '#ff8800' },
+        { type: CellType.SLEEPING_ROBOT, name: 'Sleeping', color: '#002200' }
     ];
     
     // Create a grid container for block types (2 columns)

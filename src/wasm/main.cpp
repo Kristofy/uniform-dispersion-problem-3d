@@ -209,6 +209,9 @@ struct Vector3Int {
 // External JS function for logging
 extern "C" void console_log(int value);
 
+extern "C" int randomInt(int min, int max);
+
+
 // Simple Queue implementation for BFS
 struct Queue {
     Vector3Int items[MAX_QUEUE_SIZE];
@@ -255,12 +258,15 @@ int min_int(int a, int b) {
 // Robot class
 class Robot {
 public:
+    int id;
     Vector3Int position;
     Vector3Int target;
+    Vector3Int target2 = zero;
     Vector3Int kulso_irany;   // External direction (from C# code)
     Vector3Int primary_dir;   // Primary direction value
     Vector3Int secondary_dir; // Secondary direction value
     Vector3Int last_move;
+    bool sleeping;
     bool ever_moved;
     int active_for;
     array<CellState, 3*3*3> neighbors_tmp; // Neighbors state (3x3x3)
@@ -342,9 +348,12 @@ public:
 
     // Set next move direction
     void setNextMoveDir(const Vector3Int& rel_coords) {
-        ever_moved = true;  // Set ever_moved flag like in C# implementation
-        target = position + rel_coords;
-        last_move = rel_coords;
+        if(getRelative(rel_coords) == FREE){
+            ever_moved = true;
+            last_move = rel_coords;
+            target = position + rel_coords;
+        }
+        
         // console_log(neighbors_index(rel_coords));
 
         // console_log(target.x);
@@ -404,7 +413,7 @@ public:
     
         for(const auto& dir : getAllDirections()) {
             if (dot(dir, kulso_irany) == 0 && dir != -last_move) {
-                if (getRelative(dir) == FREE) {
+                if (getRelative(dir) == FREE || getRelative(dir) == OCCUPIED) {
                     primary_dir = dir;
                     secondary_dir = sucDir(primary_dir);
                     while(dot(secondary_dir, kulso_irany) != 0) {
@@ -421,17 +430,18 @@ public:
         active_for++;
         neighbors_tmp = neighbors; // Copy neighbors to temporary variable
 
+
        
         // First check if we can move in the preferred direction (kulso_irany)
         if (-kulso_irany != last_move && getRelative(kulso_irany) != WALL) {
             primary_dir = zero;
             secondary_dir = zero;
             setNextMoveDir(kulso_irany);
-            // console_log(4);
+            //console_log(4);
             return;
         }
 
-        // console_log(5);
+        //console_log(5);
 
         // Check if robot is blocked from all sides
         neighbors_tmp = neighbors;
@@ -458,12 +468,12 @@ public:
         }
 
         if (primary_dir != zero) {
-            if (getRelative(primary_dir) == FREE) {
+            if (getRelative(primary_dir) == FREE || getRelative(primary_dir) == OCCUPIED) {
                 setNextMoveDir(primary_dir);
                 return;
             }
             
-            if (getRelative(secondary_dir) == FREE) {
+            if (getRelative(secondary_dir) == FREE || getRelative(secondary_dir) == OCCUPIED) {
                 setNextMoveDir(secondary_dir);
                 return;
             }
@@ -526,7 +536,7 @@ public:
         if (can_settle) {
             // Log a message for debugging if we're settling at a non-expected distance
             if (active_for != tav + 1) {
-                // console_log(7000 + tav); // Log settling at unexpected time
+                //console_log(7000 + tav); // Log settling at unexpected time
             }
             active = false;
             return;
@@ -538,21 +548,21 @@ public:
                 return;
             }
 
-            if (getRelative(-kulso_irany) == FREE && kulso_irany != last_move) {
+            if ((getRelative(-kulso_irany) == FREE || getRelative(-kulso_irany) == OCCUPIED) && kulso_irany != last_move) {
                 setNextMoveDir(-kulso_irany);
                 return;
             }
         }
 
         // If we got here, we couldn't find a valid move direction
-        // console_log(4000); // Log: Could not decide on a direction
+        //console_log(4000); // Log: Could not decide on a direction
         active = false; // Make robot inactive to avoid errors
     }
 
     // Move the robot to its target
     void move() {
         position = target;
-        // console_log(99);
+        //console_log(99);
     }
 };
 
@@ -639,13 +649,13 @@ extern "C" void generateRobotField() {
             if (map[x][y][z]) {
                 robot_field[x][y][z] = &robot;
             } else {
-                // console_log(5000 + i); // Log: Robot position is not walkable
-                // console_log(666);
+                //console_log(5000 + i); // Log: Robot position is not walkable
+                //console_log(666);
             }
         } else {
             // Log the collision: robot tried to occupy a position already occupied by robot_field[x][y][z]
-            // console_log(10000 + i * 100 + (robot_field[x][y][z] - robots)); // Log: Robots collided
-            // console_log(666);
+            //console_log(10000 + i * 100 + (robot_field[x][y][z] - robots)); // Log: Robots collided
+            //console_log(666);
 
         }
     }
@@ -718,15 +728,16 @@ extern "C" void set_cell(int x, int y, int z, int value) {
             if (existing_robot && existing_robot->active) {
                 existing_robot->active = false;  // Make the robot inactive/settled
                 existing_robot->settled_for = 6; // Set as "older" settled robot to render as wall
-                // // console_log(2000 + (existing_robot - robots)); // Log: Robot became inactive (wall placed)
+                //console_log(2000 + (existing_robot - robots)); // Log: Robot became inactive (wall placed)
             }
         } else if (value == 2 || value == 3) { // Placing a ROBOT or SETTLED_ROBOT
             // Add a robot only if the cell is currently empty of robots
             if (!existing_robot && robot_count < MAX_ROBOTS) {
                 robots[robot_count] = Robot(Vector3Int(x, y, z));
+                robots[robot_count].id = robot_count;
                 robots[robot_count].active = (value == 2); // Active only if type is ROBOT
                 robot_field[x][y][z] = &robots[robot_count];
-                // // console_log(1000 + robot_count); // Log: Robot added by set_cell
+                //console_log(1000 + robot_count); // Log: Robot added by set_cell
                 robot_count++;
             } else if (existing_robot) {
                  // If placing on an existing robot, update its state (e.g., make it settled)
@@ -745,12 +756,12 @@ extern "C" void set_cell(int x, int y, int z, int value) {
 // Add a robot at the specified position
 extern "C" void add_robot(int x, int y, int z) {
     if (robot_count > MAX_ROBOTS) {
-        // // console_log(3000); // Log: Robot limit reached
+        //console_log(3000); // Log: Robot limit reached
         return;
     }
 
     robots[robot_count] = Robot(Vector3Int(x, y, z));
-    // // console_log(1000 + robot_count); // Log: Robot added
+    //console_log(1000 + robot_count); // Log: Robot added
     robot_count++;
 }
 
@@ -759,7 +770,7 @@ extern "C" void simulate_step() {
 
 
     // Log start position for debugging
-    // console_log(6000 + start_pos.x * 100 + start_pos.y * 10 + start_pos.z); // Log: start_pos coordinates (6xyz)
+    //console_log(6000 + start_pos.x * 100 + start_pos.y * 10 + start_pos.z); // Log: start_pos coordinates (6xyz)
     
     // Check if there's a robot at the start position and log it
     int robot_index = -1;
@@ -772,7 +783,7 @@ extern "C" void simulate_step() {
             }
         }
     }
-    // console_log(7000 + robot_index); // Log: Robot index at start position, or -1 if none
+    //console_log(7000 + robot_index); // Log: Robot index at start position, or -1 if none
     
     // Log all existing robots' positions and states
     for (int i = 0; i < robot_count; i++) {
@@ -780,10 +791,10 @@ extern "C" void simulate_step() {
         // Log format: 1SIIIXXYYZZ where S=state(0=active,1=inactive), III=index, XX=x, YY=y, ZZ=z
         // We encode in a single 32-bit integer: robot state (1 bit) + robot index (3 digits) + xyz coords (6 digits)
         int state = robot.active ? 0 : 1;
-        // console_log(1000000 + state * 100000 + i * 10000 + robot.position.x * 100 + robot.position.y * 10 + robot.position.z);
+        //console_log(1000000 + state * 100000 + i * 10000 + robot.position.x * 100 + robot.position.y * 10 + robot.position.z);
     }
     
-    // // console_log(5001); // Log: simulate_step start
+    //console_log(5001); // Log: simulate_step start
     
     // Calculate neighbors for each robot and update their state
     for (int i = 0; i < robot_count; i++) {
@@ -799,8 +810,13 @@ extern "C" void simulate_step() {
             array<CellState, 3*3*3> neighbours2;
             generateNeighbors(robot.position.x, robot.position.y, robot.position.z, neighbours2);
 
-            // Call lookCompute with the distance from start position
-            robot.lookCompute(neighbours, neighbours2, distances[robot.position.x][robot.position.y][robot.position.z]);
+            if(randomInt(0,100) < 50) {
+                // Call lookCompute with the distance from start position
+                robot.sleeping = false;
+                robot.lookCompute(neighbours, neighbours2, distances[robot.position.x][robot.position.y][robot.position.z]);
+            } else {
+                robot.sleeping = true;
+            }
         }
     }
 
@@ -809,7 +825,7 @@ extern "C" void simulate_step() {
         robots[robot_count] = Robot(start_pos);
         // Make sure the robot state tracking system knows this robot is active
         // robot_field[start_pos.x][start_pos.y][start_pos.z] = &robots[robot_count];
-        // console_log(1000 + robot_count); // Log: Robot added by set_cell
+        //console_log(1000 + robot_count); // Log: Robot added by set_cell
         robot_count++;
     }
 
@@ -847,7 +863,7 @@ extern "C" void simulate_step() {
     }
 
 
-    // // console_log(5002); // Log: simulate_step end
+    //console_log(5002); // Log: simulate_step end
 }
 
 // Create a demo grid for testing
@@ -910,7 +926,10 @@ extern "C" int get_cell(int x, int y, int z) {
     // 3. Check for robots
     if (robot_field[x][y][z] != nullptr) {
         if (robot_field[x][y][z]->active) {
-            return 2; // Active robot
+            if(robot_field[x][y][z]->sleeping) {
+            } else {
+                return 2; // Active robot
+            }
         } else {
             // Settled robot
             if (robot_field[x][y][z]->settled_for <= 5) {
