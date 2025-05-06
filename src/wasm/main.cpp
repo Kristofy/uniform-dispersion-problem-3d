@@ -146,6 +146,14 @@ public:
     
 };
 
+
+
+// External JS function for logging
+extern "C" void console_log(int value);
+
+extern "C" int randomInt(int min, int max);
+
+
 #else
 // Include standard headers when compiling for native with libc
 #include <cstring>  // For memset and memcpy
@@ -159,6 +167,14 @@ using std::strlen;
 // Define an alias for abs to ensure consistency with the custom implementation
 inline int abs(int n) {
     return std::abs(n);
+}
+
+extern "C" void console_log(int value) {
+    // Placeholder for console logging
+}
+
+extern "C" int randomInt(int min, int max) {
+    return min + (std::rand() % (max - min + 1));
 }
 
 #endif
@@ -204,12 +220,6 @@ struct Vector3Int {
     }
 };
 
-
-
-// External JS function for logging
-extern "C" void console_log(int value);
-
-extern "C" int randomInt(int min, int max);
 
 
 // Simple Queue implementation for BFS
@@ -1270,9 +1280,6 @@ extern "C" void load_map(int map_index = 0) {
 
     // Store the current map index for use in reset
     last_loaded_map_index = map_index;
-    console_log(99);
-    console_log(last_loaded_map_index);
-    console_log(99);
 
     
     // Get the map info
@@ -1392,9 +1399,6 @@ extern "C" int get_map_size_z(int map_index) {
 extern "C" void reset_simulation() {
     // Reload the last loaded map
     load_map(last_loaded_map_index);
-    console_log(88);
-    console_log(last_loaded_map_index);
-    console_log(88);
 
     
     // The load_map function already resets most metrics,

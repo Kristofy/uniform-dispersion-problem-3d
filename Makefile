@@ -1,3 +1,4 @@
+
 CC = clang++
 CFLAGS = --target=wasm32 -nostdlib -O3
 LDFLAGS = --no-entry --export-all --lto-O3 --allow-undefined --import-memory
@@ -22,7 +23,7 @@ OUT_DIR=dist
 OBJ_DIR=$(OUT_DIR)/obj
 
 OUT_WASM = $(OUT_DIR)/main.wasm
-SRC_WASM = $(shell ls $(WASM_DIR) | grep .cpp | grep -v test.cpp)
+SRC_WASM = $(shell ls $(WASM_DIR) | grep .cpp | grep -v test.cpp | grep -v cli.cpp)
 OBJ_WASM = $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRC_WASM))
 
 # Header files that are used in the WASM code
@@ -97,10 +98,19 @@ test: $(TEST_BIN)
 	./$(TEST_BIN)
 ########## TESTS END ##########
 
+# Native CLI build (Unity build)
+CLI_SRC = src/wasm/cli.cpp
+CLI_BIN = dist/wasm_cli
+
+$(CLI_BIN): $(CLI_SRC) $(WASM_HEADERS) | $(OUT_DIR)
+	$(NATIVE_CC) $(NATIVE_CFLAGS) -o $@ $(CLI_SRC)
+
+cli: $(CLI_BIN)
+
 clean:
-	rm -rf $(OUT_DIR) $(TEST_OUT_DIR)
+	rm -rf $(OUT_DIR) $(TEST_OUT_DIR) $(CLI_BIN)
 
 run: all
 	python3 -m http.server --directory $(OUT_DIR)
 
-.PHONY: all clean run test
+.PHONY: all clean run test cli
