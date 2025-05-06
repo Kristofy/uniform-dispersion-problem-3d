@@ -59,6 +59,7 @@ export interface WasmExports {
     get_e_max: () => number;
     get_e_total: () => number;
     get_simulation_steps: () => number;
+    get_robot_count: () => number;
     is_simulation_complete: () => boolean;
     reset_simulation: () => void;
     create_demo_grid: () => void;

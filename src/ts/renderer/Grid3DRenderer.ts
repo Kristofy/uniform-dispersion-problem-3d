@@ -29,12 +29,12 @@ export class Grid3DRenderer {
         this.container = container;
         this.crosshair = crosshair;
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(60, this.container.clientWidth / this.container.clientHeight, 0.1, 1000);
         this.camera.position.copy(this.cameraDefaultPosition);
         this.camera.lookAt(this.cameraDefaultTarget);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setClearColor(0x111111);
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
         this.container.appendChild(this.renderer.domElement);
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.target.copy(this.cameraDefaultTarget);
@@ -292,9 +292,9 @@ export class Grid3DRenderer {
     }
 
     private onWindowResize = () => {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
         // No explicit render needed if animate loop is running
     };
 
@@ -305,8 +305,90 @@ export class Grid3DRenderer {
         this.renderer.render(this.scene, this.camera); // Render the scene
     };
 
+    /**
+     * Sets up camera position and orbit to have a good view of the grid
+     * @param zoomOutFactor How much to zoom out (multiplier of grid size)
+     * @param startOrbiting Whether to start automatic orbiting
+     * @param orbitSpeed Speed of orbit in radians per second (e.g., 0.1 for slow orbit)
+     */
+    public setupCameraView(zoomOutFactor: number = 1.8, startOrbiting: boolean = true, orbitSpeed: number = 0.1): void {
+        // Get grid size to calculate optimal camera position
+        const sizeX = this.wasm.get_grid_size_x();
+        const sizeY = this.wasm.get_grid_size_y();
+        const sizeZ = this.wasm.get_grid_size_z();
+        
+        // Calculate the diagonal of the grid as a basis for camera distance
+        const gridDiagonal = Math.sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ);
+        const cameraDistance = gridDiagonal * zoomOutFactor;
+        
+        // Position camera at an isometric viewpoint
+        this.camera.position.set(
+            cameraDistance * 0.7,  // Slightly offset X
+            cameraDistance * 0.7,  // Above the grid
+            cameraDistance * 0.7   // Slightly offset Z
+        );
+        
+        // Target the center of the grid
+        const offsetX = (sizeX - 1) / 2;
+        const offsetY = (sizeY - 1) / 2;
+        const offsetZ = (sizeZ - 1) / 2;
+        this.controls.target.set(0, offsetY, 0);
+        
+        // Apply changes
+        this.controls.update();
+        
+        // Set up automatic orbiting if requested
+        if (startOrbiting) {
+            this.startAutoOrbit(orbitSpeed);
+        }
+    }
+    
+    private orbitingEnabled = false;
+    private orbitSpeed = 0.1;
+    private lastOrbitTime = 0;
+    
+    /**
+     * Start automatic orbiting around the grid
+     */
+    public startAutoOrbit(speed: number = 0.1): void {
+        this.orbitingEnabled = true;
+        this.orbitSpeed = speed;
+        this.lastOrbitTime = performance.now();
+        // Store the initial radius and height for consistent orbit
+        const initialRadius = this.camera.position.distanceTo(new THREE.Vector3(this.controls.target.x, this.camera.position.y, this.controls.target.z));
+        const fixedY = this.camera.position.y;
+        this.animate = () => {
+            this.animationFrameId = requestAnimationFrame(this.animate);
+            if (this.orbitingEnabled) {
+                const now = performance.now();
+                const deltaTime = (now - this.lastOrbitTime) / 1000;
+                // Only orbit horizontally, keep y fixed
+                const currentAngle = Math.atan2(
+                    this.camera.position.x - this.controls.target.x,
+                    this.camera.position.z - this.controls.target.z
+                );
+                const newAngle = currentAngle + this.orbitSpeed * deltaTime;
+                this.camera.position.x = this.controls.target.x + initialRadius * Math.sin(newAngle);
+                this.camera.position.z = this.controls.target.z + initialRadius * Math.cos(newAngle);
+                this.camera.position.y = fixedY;
+                this.camera.lookAt(this.controls.target);
+                this.lastOrbitTime = now;
+            }
+            this.controls.update();
+            this.renderer.render(this.scene, this.camera);
+        };
+    }
+    
+    /**
+     * Stop automatic orbiting
+     */
+    public stopAutoOrbit(): void {
+        this.orbitingEnabled = false;
+    }
+
     // Cleanup resources
     public dispose() {
+        this.stopAutoOrbit();
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
         }

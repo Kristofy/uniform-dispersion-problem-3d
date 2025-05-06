@@ -1046,6 +1046,11 @@ extern "C" bool is_simulation_complete() {
     return simulation_complete;
 }
 
+// Get the current number of robots in the simulation
+extern "C" int get_robot_count() {
+    return robot_count;
+}
+
 // Get cell state for rendering
 extern "C" int get_cell(int x, int y, int z) {
     // 1. Check bounds

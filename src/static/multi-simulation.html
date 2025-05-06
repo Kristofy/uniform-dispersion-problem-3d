@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multiple Simulations</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #111;
+        color: #fff;
+        font-family: Arial, sans-serif;
+      }
+
+      .container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 20px;
+        padding: 20px;
+      }
+
+      .simulation-container {
+        width: 350px;
+        height: 350px;
+        position: relative;
+        border: 1px solid #333;
+        border-radius: 5px;
+        overflow: hidden;
+        margin-bottom: 20px;
+      }
+
+      .simulation-stats {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background-color: rgba(0, 0, 0, 0.7);
+        padding: 5px;
+        font-size: 12px;
+        color: white;
+      }
+
+      .stats-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2px;
+      }
+
+      .loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 16px;
+        text-align: center;
+      }
+
+      .global-stats {
+        background-color: #222;
+        padding: 10px;
+        margin: 10px;
+        border-radius: 5px;
+      }
+
+      .global-stats h3 {
+        margin-top: 0;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: 1.2fr repeat(4, 1fr);
+        gap: 6px;
+      }
+
+      .stat-box {
+        background-color: #333;
+        padding: 10px;
+        border-radius: 5px;
+      }
+
+      .stat-value {
+        font-size: 18px;
+        font-weight: bold;
+        margin-top: 5px;
+      }
+
+      button {
+        padding: 8px 12px;
+        background-color: #2a6496;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 10px;
+      }
+
+      button:hover {
+        background-color: #1e496d;
+      }
+    </style>
+
+    <!-- Import map to properly resolve module specifiers -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./node_modules/three/build/three.module.js",
+          "three/examples/jsm/controls/OrbitControls.js": "./node_modules/three/examples/jsm/controls/OrbitControls.js"
+        }
+      }
+    </script>
+
+    <script defer type="module" src="multi-simulation.js"></script>
+  </head>
+  <body>
+    <div class="global-stats">
+      <h3>Global Statistics</h3>
+      <div class="stat-grid">
+        <div></div>
+        <div style="text-align:center"><span title="Max">&#8593;</span></div>
+        <div style="text-align:center"><span title="Min">&#8595;</span></div>
+        <div style="text-align:center"><span title="Average">&#772;</span></div>
+        <div style="text-align:center"><span title="Variance">&#963;<sup>2</sup></span></div>
+        <div>Makespan</div>
+        <div id="global-max-makespan">-</div>
+        <div id="global-min-makespan">-</div>
+        <div id="global-avg-makespan">-</div>
+        <div id="global-var-makespan">-</div>
+        <div>Total Time</div>
+        <div id="global-max-ttotal">-</div>
+        <div id="global-min-ttotal">-</div>
+        <div id="global-avg-ttotal">-</div>
+        <div id="global-var-ttotal">-</div>
+        <div>Max Time</div>
+        <div id="global-max-tmax">-</div>
+        <div id="global-min-tmax">-</div>
+        <div id="global-avg-tmax">-</div>
+        <div id="global-var-tmax">-</div>
+        <div>Energy Total</div>
+        <div id="global-max-etotal">-</div>
+        <div id="global-min-etotal">-</div>
+        <div id="global-avg-etotal">-</div>
+        <div id="global-var-etotal">-</div>
+        <div>Energy Max</div>
+        <div id="global-max-emax">-</div>
+        <div id="global-min-emax">-</div>
+        <div id="global-avg-emax">-</div>
+        <div id="global-var-emax">-</div>
+      </div>
+      <button id="start-all">Start All</button>
+      <button id="reset-all">Reset All</button>
+    </div>
+    <div class="container" id="simulations-container">
+      <div id="loading" class="loading">Loading WebAssembly modules...</div>
+    </div>
+  </body>
+</html>

@@ -1,8 +1,7 @@
 // WASM utility functions
-export function memset(ptr: number, value: number, size: number): number {
-    const memory = (window as any).wasmMemory;
+export function memset(ptr: number, value: number, size: number, memory?: WebAssembly.Memory): number {
     if (!memory) {
-        console.error("Wasm memory not found for memset");
+        console.error("Wasm memory not provided for memset");
         return ptr;
     }
     const buffer = new Uint8Array(memory.buffer);
@@ -10,10 +9,9 @@ export function memset(ptr: number, value: number, size: number): number {
     return ptr;
 }
 
-export function memcpy(dest: number, src: number, len: number): number {
-    const memory = (window as any).wasmMemory;
+export function memcpy(dest: number, src: number, len: number, memory?: WebAssembly.Memory): number {
     if (!memory) {
-        console.error("Wasm memory not found for memcpy");
+        console.error("Wasm memory not provided for memcpy");
         return dest;
     }
     const buffer = new Uint8Array(memory.buffer);
