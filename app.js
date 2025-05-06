@@ -97,8 +97,12 @@ async function main() {
                     console.log(message);
                 },
                 memory: memory,
-                memset: memset, // Provide the memset implementation
-                memcpy: memcpy, // Provide the memcpy implementation
+                memset: (ptr, value, size) => {
+                    return memset(ptr, value, size, memory);
+                },
+                memcpy: (dest, src, len) => {
+                    return memcpy(dest, src, len, memory);
+                },
                 randomInt: (min, max) => {
                     // Generate a random number between min and max (inclusive)
                     return Math.floor(Math.random() * (max - min + 1)) + min;
