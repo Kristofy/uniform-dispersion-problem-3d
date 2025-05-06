@@ -6,7 +6,7 @@ export function createBlockSelector(container: HTMLElement, wasm: WasmExports, r
     const cellTypeContainer = document.createElement('div');
     cellTypeContainer.style.marginBottom = '15px';
     const cellTypeLabel = document.createElement('div');
-    cellTypeLabel.textContent = 'Block Types & Transparency:';
+    cellTypeLabel.textContent = 'Block Types';
     cellTypeLabel.style.marginBottom = '5px';
     cellTypeContainer.appendChild(cellTypeLabel);
     const cellTypes = [

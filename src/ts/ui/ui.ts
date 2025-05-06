@@ -24,18 +24,10 @@ export function createUI(wasm: WasmExports, renderer: Grid3DRenderer) {
 
     // Title
     const title = document.createElement('h3');
-    title.textContent = '3D Grid Controls';
+    title.textContent = 'Controls';
     title.style.margin = '0 0 10px 0';
     uiContainer.appendChild(title);
 
-    // Instructions
-    const instructions = document.createElement('p');
-    instructions.innerHTML = `<b>Orbit Mode:</b> Rotate/Zoom with mouse. Click to place selected block.<br>
-                              <b>WASD Mode:</b> Use WASD + Space/Shift to move. Mouse controls view. Left-click to delete block, Right-click to place block. Press Esc to exit pointer lock.`;
-    instructions.style.margin = '0 0 15px 0';
-    instructions.style.fontSize = '13px';
-    instructions.style.lineHeight = '1.4';
-    uiContainer.appendChild(instructions);
 
     // Block selector
     createBlockSelector(uiContainer, wasm, renderer);
