@@ -83,6 +83,12 @@ int main(int argc, char* argv[]) {
 
     std::vector<SimulationMetrics> metrics;
 
+    // Print input parameters for reproducibility
+    std::cout << "Simulation Parameters:\n";
+    std::cout << "  Active Probability (p): " << pValue << "\n";
+    std::cout << "  Map Index:              " << mapIndex << "\n";
+    std::cout << "  Number of Simulations:   " << numSimulations << "\n";
+    std::cout << std::endl;
 
     for (int i = 0; i < numSimulations; ++i) {
         load_map(mapIndex);
