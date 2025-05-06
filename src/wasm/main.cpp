@@ -577,6 +577,20 @@ enum class RobotState {
 
 RobotState prev_robot_states[MAX_ROBOTS], curr_robot_states[MAX_ROBOTS];
 
+// Simulation metrics for tracking
+int available_cells = 0;      // Number of walkable cells (n)
+int makespan = 0;             // Time for the last robot to settle
+int t_max = 0;                // Maximum steps taken by any robot
+int t_total = 0;              // Total number of steps taken by all robots
+int e_max = 0;                // Maximum time spent by any robot
+int e_total = 0;              // Total time spent by all robots
+int simulation_steps = 0;     // Number of steps in the simulation
+bool simulation_complete = false; // Flag to indicate all robots have settled
+
+// Track steps taken by each robot (for t_max and t_total)
+int robot_steps[MAX_ROBOTS] = {0};
+// Track time spent by each robot (for e_max and e_total)
+int robot_time[MAX_ROBOTS] = {0};
 
 void initialize_robot_states() {
     for (int i = 0; i < MAX_ROBOTS; ++i) {
@@ -595,11 +609,12 @@ Robot* robot_field[MAX_SIZE][MAX_SIZE][MAX_SIZE];
 Robot robots[MAX_ROBOTS];
 int robot_count = 0;
 Vector3Int start_pos(0, 0, 0);
+int last_loaded_map_index = 0; // Store the last loaded map index
 
 
 // Set start position
 extern "C" void set_start_position(int x, int y, int z) {
-    start_pos = Vector3Int(x, y, z);
+    start_pos = Vector3Int(z, y, x);
 }
 
 
@@ -663,11 +678,15 @@ extern "C" void generateRobotField() {
 
 // BFS to calculate distances from start position
 extern "C" void bfs() {
-    // Initialize distances
+    // Initialize distances and count available cells
+    available_cells = 0;
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
             for (int k = 0; k < depth; k++) {
                 distances[i][j][k] = INT_MAX;
+                if (map[i][j][k]) {
+                    available_cells++; // Count walkable cells
+                }
             }
         }
     }
@@ -708,9 +727,23 @@ extern "C" void init_grid(int x, int y, int z) {
     memset(robot_field, 0, sizeof(robot_field));
     
     robot_count = 0;
-
+    
+    // Reset simulation metrics
+    available_cells = 0;
+    makespan = 0;
+    t_max = 0;
+    t_total = 0;
+    e_max = 0;
+    e_total = 0;
+    simulation_steps = 0;
+    simulation_complete = false;
+    
+    // Reset per-robot tracking arrays
+    memset(robot_steps, 0, sizeof(robot_steps));
+    memset(robot_time, 0, sizeof(robot_time));
+    
     initialize_robot_states();
-    start_pos = Vector3Int(0, 0, 0);
+    // start_pos = Vector3Int(0, 0, 0);
 }
 
 // Set cell in the map
@@ -718,6 +751,14 @@ extern "C" void set_cell(int x, int y, int z, int value) {
     if (x >= 0 && x < height && y >= 0 && y < width && z >= 0 && z < depth) {
         // Determine walkability based on type
         bool is_walkable = (value == 0 || value == 2 || value == 3 || value == 4);
+        
+        // Track changes in available cells
+        if (is_walkable && !map[x][y][z]) {
+            available_cells++; // Increment if cell becomes walkable
+        } else if (!is_walkable && map[x][y][z]) {
+            available_cells--; // Decrement if cell becomes unwalkable
+        }
+        
         map[x][y][z] = is_walkable;
 
         // Handle robot state based on the new cell type
@@ -777,7 +818,8 @@ extern "C" void set_active_probability(int p) {
 
 // Simulate one step of the algorithm
 extern "C" void simulate_step() {
-
+    // Increment simulation step counter
+    simulation_steps++;
 
     // Log start position for debugging
     //console_log(6000 + start_pos.x * 100 + start_pos.y * 10 + start_pos.z); // Log: start_pos coordinates (6xyz)
@@ -806,11 +848,17 @@ extern "C" void simulate_step() {
     
     //console_log(5001); // Log: simulate_step start
     
+    // Reset the simulation completion flag
+    simulation_complete = true;
+    
     // Calculate neighbors for each robot and update their state
     for (int i = 0; i < robot_count; i++) {
         Robot& robot = robots[i];
 
+        // If any robot is active, the simulation is not complete
         if (robot.active) {
+            simulation_complete = false;
+            
             // Generate primary neighbor data for the robot's current position
             array<CellState, 3*3*3> neighbours;
             generateNeighbors(robot.position.x, robot.position.y, robot.position.z, neighbours);
@@ -819,7 +867,7 @@ extern "C" void simulate_step() {
             array<CellState, 3*3*3> neighbours2;
             generateNeighbors(robot.position.x, robot.position.y, robot.position.z, neighbours2);
 
-            if(randomInt(0,100) < g_active_probability) {
+            if(randomInt(0,100) <= g_active_probability) {
                 // Call lookCompute with the distance from start position
                 robot.sleeping = false;
                 robot.lookCompute(neighbours, neighbours2, distances[robot.position.x][robot.position.y][robot.position.z]);
@@ -836,6 +884,9 @@ extern "C" void simulate_step() {
         // robot_field[start_pos.x][start_pos.y][start_pos.z] = &robots[robot_count];
         //console_log(1000 + robot_count); // Log: Robot added by set_cell
         robot_count++;
+        
+        // If a new robot is added, the simulation is not complete
+        simulation_complete = false;
     }
 
     
@@ -843,9 +894,36 @@ extern "C" void simulate_step() {
     for (int i = 0; i < robot_count; i++) {
         Robot& robot = robots[i];
         if (robot.active) {
+            // Check if position will actually change (to count steps)
+            bool moving = robot.position != robot.target;
+            
+            // Move the robot
             robot.move();
+            
+            // Update tracking metrics
+            robot_time[i]++;  // Increment time spent for active robots
+            
+            // Only count as a step if the robot actually moved
+            if (moving) {
+                robot_steps[i]++;  // Count steps for this robot
+                t_total++;         // Increment total steps counter
+            }
+            
+            // Update t_max if this robot has taken more steps
+            if (robot_steps[i] > t_max) {
+                t_max = robot_steps[i];
+            }
         } else {
             robot.settled_for++;
+        }
+        
+        // Update e_total and e_max
+        // robot_time[i]++;  // Increment time spent (active or not)
+        e_total++;        // Increment total time counter
+        
+        // Update e_max if this robot has spent more time
+        if (robot_time[i] > e_max) {
+            e_max = robot_time[i];
         }
     }
 
@@ -871,52 +949,102 @@ extern "C" void simulate_step() {
         }
     }
 
+    makespan = simulation_steps;
 
     //console_log(5002); // Log: simulate_step end
 }
 
-// Create a demo grid for testing
-extern "C" void create_demo_grid() {
+// // Create a demo grid for testing
+// extern "C" void create_demo_grid() {
+//     // Reset simulation metrics
+//     makespan = 0;
+//     t_max = 0;
+//     t_total = 0;
+//     e_max = 0;
+//     e_total = 0;
+//     simulation_steps = 0;
+//     simulation_complete = false;
+    
+//     // Reset per-robot tracking arrays
+//     memset(robot_steps, 0, sizeof(robot_steps));
+//     memset(robot_time, 0, sizeof(robot_time));
 
-    up = Vector3Int(0, 1, 0);
-    down = Vector3Int(0, -1, 0);
-    left = Vector3Int(-1, 0, 0);
-    right = Vector3Int(1, 0, 0);
-    forward = Vector3Int(0, 0, 1);
-    back = Vector3Int(0, 0, -1);
-    zero = Vector3Int(0, 0, 0);
+//     up = Vector3Int(0, 1, 0);
+//     down = Vector3Int(0, -1, 0);
+//     left = Vector3Int(-1, 0, 0);
+//     right = Vector3Int(1, 0, 0);
+//     forward = Vector3Int(0, 0, 1);
+//     back = Vector3Int(0, 0, -1);
+//     zero = Vector3Int(0, 0, 0);
 
 
-    // console_log(123);
-    // console_log(down.x);
-    // console_log(down.y);
-    // console_log(down.z);
-    // console_log(123);
+//     // console_log(123);
+//     // console_log(down.x);
+//     // console_log(down.y);
+//     // console_log(down.z);
+//     // console_log(123);
 
-    // Initialize a simple grid
-    // Create a trivial 4 x 4 x 4 grid with walls and a door
-    init_grid(3, 4, 4);
-    for (int x = 0; x < 3; x++) {
-        for (int y = 0; y < 4; y++) {
-            for (int z = 0; z < 4; z++) {
-                if (x == 0 || x == 2 || y == 0 || y == 3 || z == 0 || z == 3) {
-                    set_cell(x, y, z, 1); // Wall
-                } else {
-                    set_cell(x, y, z, 0); // Empty space
-                }
-            }
-        }
-    }
+//     // Initialize a simple grid
+//     // Create a trivial 4 x 4 x 4 grid with walls and a door
+//     init_grid(3, 4, 4);
+//     for (int x = 0; x < 3; x++) {
+//         for (int y = 0; y < 4; y++) {
+//             for (int z = 0; z < 4; z++) {
+//                 if (x == 0 || x == 2 || y == 0 || y == 3 || z == 0 || z == 3) {
+//                     set_cell(x, y, z, 1); // Wall
+//                 } else {
+//                     set_cell(x, y, z, 0); // Empty space
+//                 }
+//             }
+//         }
+//     }
 
-    // The start position (door) is at the center of the grid
-    set_cell(2, 1, 1, 4); // Door
-    start_pos = Vector3Int(2, 1, 1); // Set start position
-}
+//     // The start position (door) is at the center of the grid
+//     set_cell(2, 1, 1, 4); // Door
+//     start_pos = Vector3Int(2, 1, 1); // Set start position
+    
+//     // Calculate distances and ensure all metrics are initialized
+//     bfs();
+// }
 
 // Get grid dimensions
 extern "C" int get_grid_size_x() { return height; }
 extern "C" int get_grid_size_y() { return width; }
 extern "C" int get_grid_size_z() { return depth; }
+
+// Expose simulation metrics to JavaScript
+extern "C" int get_available_cells() {
+    return available_cells;
+}
+
+extern "C" int get_makespan() {
+    return makespan;
+}
+
+extern "C" int get_t_max() {
+    return t_max;
+}
+
+extern "C" int get_t_total() {
+    return t_total;
+}
+
+extern "C" int get_e_max() {
+    return e_max;
+}
+
+extern "C" int get_e_total() {
+    return e_total;
+}
+
+extern "C" int get_simulation_steps() {
+    return simulation_steps;
+}
+
+// Check if the simulation is complete (all robots settled)
+extern "C" bool is_simulation_complete() {
+    return simulation_complete;
+}
 
 // Get cell state for rendering
 extern "C" int get_cell(int x, int y, int z) {
@@ -1135,6 +1263,13 @@ extern "C" void load_map(int map_index = 0) {
         }
     }
 
+    // Store the current map index for use in reset
+    last_loaded_map_index = map_index;
+    console_log(99);
+    console_log(last_loaded_map_index);
+    console_log(99);
+
+    
     // Get the map info
     const WasmMaps::MapInfo& map_info = WasmMaps::all_maps[map_index];
     
@@ -1149,9 +1284,6 @@ extern "C" void load_map(int map_index = 0) {
     // Initialize the grid with the map dimensions - swapping X and Z to match our internal representation
     init_grid(map_info.size_x, map_info.size_y, map_info.size_z);
     
-    // Set the start position (keep the coordinate system consistent)
-    set_start_position(map_info.start.x, map_info.start.y, map_info.start.z);
-  
     // Fill the map data from the binary representation
     // The bit stream in the compressed data follows the order: z→y→x (from convert.py)
     
@@ -1172,9 +1304,9 @@ extern "C" void load_map(int map_index = 0) {
                 // Our map is indexed as [x][y][z] in our C++ code
                 map[x][y][z] = isWalkable; // map stores walkability (true = walkable)
                 
-                // Set the door at the start position
-                if (x == map_info.start.x && y == map_info.start.z && z == map_info.start.y) {
-                    set_cell(x, y, z, 4); // Door
+                // Set the door at the start position - note we're now checking the correct coordinates
+                if (x == map_info.start.x && y == map_info.start.y && z == map_info.start.z) {
+                    // set_cell(x, y, z, 4); // Door
                 } else if (!isWalkable) {
                     set_cell(x, y, z, 1); // Wall
                 } else {
@@ -1186,12 +1318,25 @@ extern "C" void load_map(int map_index = 0) {
         }
     }
     
-    // Calculate the shortest distances from the start position
+    // Calculate the shortest distances from the start position and count available cells
     bfs();
     
-    // console_log(9000 + map_index); // Log: Map loaded successfully
-
-    set_start_position(map_info.start.z, map_info.start.y, map_info.start.x);
+    // Reset simulation metrics
+    makespan = 0;
+    t_max = 0;
+    t_total = 0;
+    e_max = 0;
+    e_total = 0;
+    simulation_steps = 0;
+    simulation_complete = false;
+    
+    // Reset per-robot tracking arrays
+    memset(robot_steps, 0, sizeof(robot_steps));
+    memset(robot_time, 0, sizeof(robot_time));
+    
+    // Set the start position consistently
+    set_start_position(map_info.start.x, map_info.start.y, map_info.start.z);
+   
 }
 
 // Function to get the number of available maps
@@ -1236,4 +1381,41 @@ extern "C" int get_map_size_z(int map_index) {
         return -1; // Error: invalid index
     }
     return WasmMaps::all_maps[map_index].size_z;
+}
+
+// Reset the simulation to the last loaded map
+extern "C" void reset_simulation() {
+    // Reload the last loaded map
+    load_map(last_loaded_map_index);
+    console_log(88);
+    console_log(last_loaded_map_index);
+    console_log(88);
+
+    
+    // The load_map function already resets most metrics,
+    // but ensure simulation metrics are also reset
+    makespan = 0;
+    t_max = 0;
+    t_total = 0;
+    e_max = 0;
+    e_total = 0;
+    simulation_steps = 0;
+    simulation_complete = false;
+    
+    // Reset per-robot tracking arrays
+    memset(robot_steps, 0, sizeof(robot_steps));
+    memset(robot_time, 0, sizeof(robot_time));
+    
+    // Reset robot states
+    initialize_robot_states();
+    
+    // Clear existing robots
+    robot_count = 0;
+    memset(robot_field, 0, sizeof(robot_field));
+    
+    // Ensure the door cell is set correctly at the start position
+    // set_cell(start_pos.x, start_pos.y, start_pos.z, 4);
+    
+    // Recalculate available cells
+    bfs();
 }
