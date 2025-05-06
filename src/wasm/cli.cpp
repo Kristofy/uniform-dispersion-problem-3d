@@ -14,12 +14,14 @@ void printHelp() {
     std::cout << "  -n <simulations>     Set number of simulations to run\n";
 }
 
+
 struct SimulationMetrics {
     int makespan;
     int e_total;
     int e_max;
     int t_total;
     int t_max;
+    int available_cells;
 };
 
 void logMetrics(const std::vector<SimulationMetrics>& metrics) {
@@ -30,13 +32,14 @@ void logMetrics(const std::vector<SimulationMetrics>& metrics) {
         return std::make_tuple(min, max, avg);
     };
 
-    std::vector<int> makespans, e_totals, e_maxs, t_totals, t_maxs;
+    std::vector<int> makespans, e_totals, e_maxs, t_totals, t_maxs, available_cells;
     for (const auto& metric : metrics) {
         makespans.push_back(metric.makespan);
         e_totals.push_back(metric.e_total);
         e_maxs.push_back(metric.e_max);
         t_totals.push_back(metric.t_total);
         t_maxs.push_back(metric.t_max);
+        available_cells.push_back(metric.available_cells);
     }
 
     auto [minMakespan, maxMakespan, avgMakespan] = calculateStats(makespans);
@@ -44,13 +47,15 @@ void logMetrics(const std::vector<SimulationMetrics>& metrics) {
     auto [minEMax, maxEMax, avgEMax] = calculateStats(e_maxs);
     auto [minTTotal, maxTTotal, avgTTotal] = calculateStats(t_totals);
     auto [minTMax, maxTMax, avgTMax] = calculateStats(t_maxs);
+    auto [minCells, maxCells, avgCells] = calculateStats(available_cells);
 
     std::cout << "Simulation Metrics:\n";
-    std::cout << "  Makespan: Min=" << minMakespan << " Max=" << maxMakespan << " Avg=" << avgMakespan << "\n";
-    std::cout << "  E_Total:  Min=" << minETotal << " Max=" << maxETotal << " Avg=" << avgETotal << "\n";
-    std::cout << "  E_Max:    Min=" << minEMax << " Max=" << maxEMax << " Avg=" << avgEMax << "\n";
-    std::cout << "  T_Total:  Min=" << minTTotal << " Max=" << maxTTotal << " Avg=" << avgTTotal << "\n";
-    std::cout << "  T_Max:    Min=" << minTMax << " Max=" << maxTMax << " Avg=" << avgTMax << "\n";
+    std::cout << "  Available Cells: Min=" << minCells << " Max=" << maxCells << " Avg=" << avgCells << "\n";
+    std::cout << "  Makespan:        Min=" << minMakespan << " Max=" << maxMakespan << " Avg=" << avgMakespan << "\n";
+    std::cout << "  E_Total:         Min=" << minETotal << " Max=" << maxETotal << " Avg=" << avgETotal << "\n";
+    std::cout << "  E_Max:           Min=" << minEMax << " Max=" << maxEMax << " Avg=" << avgEMax << "\n";
+    std::cout << "  T_Total:         Min=" << minTTotal << " Max=" << maxTTotal << " Avg=" << avgTTotal << "\n";
+    std::cout << "  T_Max:           Min=" << minTMax << " Max=" << maxTMax << " Avg=" << avgTMax << "\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -78,6 +83,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<SimulationMetrics> metrics;
 
+
     for (int i = 0; i < numSimulations; ++i) {
         load_map(mapIndex);
         set_active_probability(pValue);
@@ -91,7 +97,8 @@ int main(int argc, char* argv[]) {
             get_e_total(),
             get_e_max(),
             get_t_total(),
-            get_t_max()
+            get_t_max(),
+            get_available_cells()
         });
 
         reset_simulation();
