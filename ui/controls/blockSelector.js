@@ -25,7 +25,7 @@ export function createBlockSelector(container, wasm, renderer) {
     slidersContainer.style.marginTop = '10px';
     const transparencySliders = {};
     cellTypes.forEach(cellType => {
-        const blockButton = document.createElement('button');
+        const blockButton = document.createElement('span');
         blockButton.textContent = cellType.name;
         blockButton.style.backgroundColor = cellType.color;
         blockButton.style.color = ['Empty', 'Wall'].includes(cellType.name) ? 'black' : 'white';
@@ -33,66 +33,49 @@ export function createBlockSelector(container, wasm, renderer) {
         blockButton.style.borderRadius = '3px';
         blockButton.style.padding = '6px 8px';
         blockButton.style.width = '100%';
-        blockButton.style.cursor = 'pointer';
         blockButton.style.fontWeight = 'bold';
         blockButton.style.fontSize = '14px';
-        blockButton.addEventListener('click', () => {
-            if (blockButton.style.outline === '2px solid white') {
-                blockButton.style.outline = 'none';
-                selectedCellTypeForPlacement = null;
-                renderer.setSelectedCellType(CellType.WALL);
-                return;
-            }
-            selectedCellTypeForPlacement = cellType.type;
-            renderer.setSelectedCellType(cellType.type);
-            document.querySelectorAll('[data-block-button]').forEach((elem) => {
-                if (elem instanceof HTMLElement) {
-                    elem.style.outline = 'none';
-                }
-            });
-            blockButton.style.outline = '2px solid white';
-        });
         blockButton.setAttribute('data-block-button', 'true');
         blockButton.setAttribute('data-block-type', cellType.type.toString());
         blockTypesGrid.appendChild(blockButton);
-        const sliderContainer = document.createElement('div');
-        sliderContainer.style.marginBottom = '6px';
-        const sliderHeader = document.createElement('div');
-        sliderHeader.style.display = 'flex';
-        sliderHeader.style.justifyContent = 'space-between';
-        sliderHeader.style.alignItems = 'center';
-        sliderHeader.style.marginBottom = '2px';
-        const sliderLabel = document.createElement('span');
-        sliderLabel.textContent = `${cellType.name} opacity:`;
-        sliderLabel.style.fontSize = '12px';
-        const valueDisplay = document.createElement('span');
-        let currentOpacity = renderer.getMaterialOpacity(cellType.type);
-        valueDisplay.textContent = `${Math.round(currentOpacity * 100)}%`;
-        valueDisplay.style.fontSize = '12px';
-        valueDisplay.style.minWidth = '36px';
-        valueDisplay.style.textAlign = 'right';
-        sliderHeader.appendChild(sliderLabel);
-        sliderHeader.appendChild(valueDisplay);
-        const transparencySlider = document.createElement('input');
-        transparencySlider.type = 'range';
-        transparencySlider.min = '0';
-        transparencySlider.max = '100';
-        transparencySlider.value = (currentOpacity * 100).toString();
-        transparencySlider.style.width = '100%';
-        transparencySlider.style.marginBottom = '0';
-        transparencySlider.style.cursor = 'pointer';
-        transparencySlider.addEventListener('input', () => {
-            const opacity = parseInt(transparencySlider.value) / 100;
-            valueDisplay.textContent = `${transparencySlider.value}%`;
-            renderer.setMaterialOpacity(cellType.type, opacity);
-        });
-        transparencySliders[cellType.type] = {
-            slider: transparencySlider,
-            value: valueDisplay
-        };
-        sliderContainer.appendChild(sliderHeader);
-        sliderContainer.appendChild(transparencySlider);
-        slidersContainer.appendChild(sliderContainer);
+        // const sliderContainer = document.createElement('div');
+        // sliderContainer.style.marginBottom = '6px';
+        // const sliderHeader = document.createElement('div');
+        // sliderHeader.style.display = 'flex';
+        // sliderHeader.style.justifyContent = 'space-between';
+        // sliderHeader.style.alignItems = 'center';
+        // sliderHeader.style.marginBottom = '2px';
+        // const sliderLabel = document.createElement('span');
+        // sliderLabel.textContent = `${cellType.name} opacity:`;
+        // sliderLabel.style.fontSize = '12px';
+        // const valueDisplay = document.createElement('span');
+        // let currentOpacity = renderer.getMaterialOpacity(cellType.type);
+        // valueDisplay.textContent = `${Math.round(currentOpacity * 100)}%`;
+        // valueDisplay.style.fontSize = '12px';
+        // valueDisplay.style.minWidth = '36px';
+        // valueDisplay.style.textAlign = 'right';
+        // sliderHeader.appendChild(sliderLabel);
+        // sliderHeader.appendChild(valueDisplay);
+        // const transparencySlider = document.createElement('input');
+        // transparencySlider.type = 'range';
+        // transparencySlider.min = '0';
+        // transparencySlider.max = '100';
+        // transparencySlider.value = (currentOpacity * 100).toString();
+        // transparencySlider.style.width = '100%';
+        // transparencySlider.style.marginBottom = '0';
+        // transparencySlider.style.cursor = 'pointer';
+        // transparencySlider.addEventListener('input', () => {
+        //     const opacity = parseInt(transparencySlider.value) / 100;
+        //     valueDisplay.textContent = `${transparencySlider.value}%`;
+        //     renderer.setMaterialOpacity(cellType.type, opacity);
+        // });
+        // transparencySliders[cellType.type] = {
+        //     slider: transparencySlider,
+        //     value: valueDisplay
+        // };
+        // sliderContainer.appendChild(sliderHeader);
+        // sliderContainer.appendChild(transparencySlider);
+        // slidersContainer.appendChild(sliderContainer);
     });
     cellTypeContainer.appendChild(blockTypesGrid);
     cellTypeContainer.appendChild(slidersContainer);
