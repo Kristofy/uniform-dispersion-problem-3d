@@ -471,6 +471,11 @@ public:
 
         if (primary_dir == zero) {
             initPrimary();
+            if(getRelative(primary_dir) != FREE){
+                primary_dir = zero;
+                secondary_dir = zero;
+                return;
+            }
             if (primary_dir != zero) {
                 setNextMoveDir(primary_dir);
                 return;
