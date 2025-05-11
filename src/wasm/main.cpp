@@ -438,23 +438,9 @@ public:
     // The main decision function for robot movement
     void lookCompute(array<CellState, 3 * 3 * 3>& neighbors, array<CellState, 3 * 3 * 3>& neighbors2, const int tav) {
         active_for++;
-        neighbors_tmp = neighbors; // Copy neighbors to temporary variable
 
-
-       
-        // First check if we can move in the preferred direction (kulso_irany)
-        if (-kulso_irany != last_move && getRelative(kulso_irany) != WALL) {
-            primary_dir = zero;
-            secondary_dir = zero;
-            setNextMoveDir(kulso_irany);
-            //console_log(4);
-            return;
-        }
-
-        //console_log(5);
-
-        // Check if robot is blocked from all sides
         neighbors_tmp = neighbors;
+
         bool block_all = true;
         
         for (const auto& dir : getAllDirections()) {
@@ -469,33 +455,10 @@ public:
             return;
         }
 
-        if (primary_dir == zero) {
-            initPrimary();
-            if (primary_dir != zero) {
-                if(getRelative(primary_dir) != FREE){
-                    primary_dir = zero;
-                    secondary_dir = zero;
-                    return;
-                }
-                setNextMoveDir(primary_dir);
-                return;
-            }
-        }
-
-        if (primary_dir != zero) {
-            if (getRelative(primary_dir) == FREE || getRelative(primary_dir) == OCCUPIED) {
-                setNextMoveDir(primary_dir);
-                return;
-            }
-            
-            if (getRelative(secondary_dir) == FREE || getRelative(secondary_dir) == OCCUPIED) {
-                setNextMoveDir(secondary_dir);
-                return;
-            }
-        }
-
         // Trying to settle
-        bool can_settle = ever_moved;
+        bool can_settle = ever_moved && (getRelative(up) == WALL || getRelative(down) == WALL) &&
+                                        (getRelative(right) == WALL || getRelative(left) == WALL) &&
+                                        (getRelative(forward) == WALL || getRelative(back) == WALL);
 
         // Make the top and bottom layers walls in neighbors2
         for (int i = 0; i <= 2; i++) {
@@ -551,32 +514,27 @@ public:
         if (can_settle) {
             // Log a message for debugging if we're settling at a non-expected distance
             if (active_for != tav + 1) {
-                //console_log(7000 + tav); // Log settling at unexpected time
+                console_log(7000 + tav); // Log settling at unexpected time
             }
             active = false;
             return;
-        } else {
-            // If can't settle, try to find another direction
-            initPrimary(); // Re-initialize to check again
-            if (primary_dir != zero) {
-                if(getRelative(primary_dir) != FREE){
-                    primary_dir = zero;
-                    secondary_dir = zero;
-                    return;
-                }
-                setNextMoveDir(primary_dir);
-                return;
-            }
-
-            if ((getRelative(-kulso_irany) == FREE || getRelative(-kulso_irany) == OCCUPIED) && kulso_irany != last_move) {
-                setNextMoveDir(-kulso_irany);
-                return;
-            }
         }
 
-        // If we got here, we couldn't find a valid move direction
-        //console_log(4000); // Log: Could not decide on a direction
-        active = false; // Make robot inactive to avoid errors
+        if(last_move != down && (getRelative(up) == FREE || getRelative(up) == OCCUPIED)){
+            setNextMoveDir(up);
+            return;
+        }
+    
+        for(const auto& dir : getAllDirections()) {
+            if (dot(dir, kulso_irany) == 0 && dir != -last_move) {
+                if (getRelative(dir) == FREE || getRelative(dir) == OCCUPIED) {
+                    setNextMoveDir(dir);
+                    return;
+                }
+            }
+        }
+        
+        setNextMoveDir(down);
     }
 
     // Move the robot to its target
