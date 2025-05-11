@@ -471,12 +471,12 @@ public:
 
         if (primary_dir == zero) {
             initPrimary();
-            if(getRelative(primary_dir) != FREE){
-                primary_dir = zero;
-                secondary_dir = zero;
-                return;
-            }
             if (primary_dir != zero) {
+                if(getRelative(primary_dir) != FREE){
+                    primary_dir = zero;
+                    secondary_dir = zero;
+                    return;
+                }
                 setNextMoveDir(primary_dir);
                 return;
             }
@@ -559,6 +559,11 @@ public:
             // If can't settle, try to find another direction
             initPrimary(); // Re-initialize to check again
             if (primary_dir != zero) {
+                if(getRelative(primary_dir) != FREE){
+                    primary_dir = zero;
+                    secondary_dir = zero;
+                    return;
+                }
                 setNextMoveDir(primary_dir);
                 return;
             }
