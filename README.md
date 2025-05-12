@@ -35,7 +35,7 @@ Or check out some aggregate data from multiple parallel simulations [here](https
 
    ```sh
    $ git clone https://github.com/Kristofy/uniform-dispersion-problem-3d.git
-   $ cd uniform-dispersion-problem
+   $ cd uniform-dispersion-problem-3d
    ```
 
 2. Install the dependencies
